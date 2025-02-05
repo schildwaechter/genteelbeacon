@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"log/slog"
 	"os"
@@ -10,6 +11,14 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	slogfiber "github.com/samber/slog-fiber"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
 var buildEpoch string = "0"
@@ -22,8 +31,47 @@ func getEnv(name string, defaultValue string) string {
 	}
 	return defaultValue
 }
+func InitTracer(tracesEndpoint string, serviceName string) (*trace.TracerProvider, error) {
+	ctx := context.Background()
+	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(tracesEndpoint), otlptracehttp.WithInsecure())
+	if err != nil {
+		return nil, err
+	}
+
+	tracerProvider := trace.NewTracerProvider(
+		trace.WithSampler(trace.AlwaysSample()),
+		trace.WithBatcher(exporter),
+		trace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(serviceName))),
+	)
+	otel.SetTracerProvider(tracerProvider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	return tracerProvider, nil
+}
 
 func main() {
+	// our names
+	useName := getEnv("USENAME", "Genteel Beacon")
+	nodeName, err := os.Hostname()
+	if err != nil {
+		nodeName = "unknown host"
+	}
+
+	tracesEndpoint, ok := os.LookupEnv("OTEL_TRACES_ENDPOINT")
+	if ok {
+		tp, err := InitTracer(tracesEndpoint, useName)
+		if err != nil {
+			slog.Error("Can't send traces")
+		}
+		defer func() {
+			_ = tp.Shutdown(context.Background())
+		}()
+		slog.Info("Sending traces to " + tracesEndpoint)
+	} else {
+		slog.Info("Not sending traces")
+	}
+
 	app := fiber.New()
 	app.Use(requestid.New())
 
@@ -49,15 +97,12 @@ func main() {
 		ReadinessEndpoint: "/readyz",
 	}))
 
-	// our names
-	useName := getEnv("USENAME", "Genteel Beacon")
-	nodeName, err := os.Hostname()
-	if err != nil {
-		nodeName = "unknown host"
-	}
-
 	// Define a route for the root path '/'
 	app.Get("/", func(c *fiber.Ctx) error {
+		tracer := otel.Tracer("root")
+		_, span := tracer.Start(c.UserContext(), "Root Endpoint")
+		span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
+		defer span.End()
 		return c.SendString("Build time: " + buildEpoch + ", »" + useName + "« running on " + nodeName + " 🙋 " + slogfiber.GetRequestIDFromContext(c.Context()) + " 🏁")
 	})
 
