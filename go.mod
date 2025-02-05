@@ -5,6 +5,7 @@ go 1.23.5
 require (
 	github.com/gofiber/fiber/v2 v2.52.6
 	github.com/gofiber/fiber/v3 v3.0.0-beta.4
+	github.com/samber/slog-fiber v1.17.2
 )
 
 require (
@@ -24,6 +25,8 @@ require (
 	github.com/valyala/fasthttp v1.58.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	go.opentelemetry.io/otel v1.34.0 // indirect
+	go.opentelemetry.io/otel/trace v1.34.0 // indirect
 	golang.org/x/crypto v0.32.0 // indirect
 	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
