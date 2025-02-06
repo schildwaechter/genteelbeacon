@@ -1,0 +1,28 @@
+mode: daemonset
+
+image:
+  repository: otel/opentelemetry-collector-k8s
+
+presets:
+  hostMetrics:
+    enabled: true
+  kubernetesAttributes:
+    enabled: true
+  kubeletMetrics:
+    enabled: true
+  logsCollection:
+    enabled: true
+config:
+  exporters:
+    otlphttp:
+      endpoint: "http://otelcol-opentelemetry-collector.otel:4318"
+      tls:
+        insecure: true
+  service:
+    pipelines:
+      traces:
+        exporters: [otlphttp]
+      metrics:
+        exporters: [otlphttp]
+      logs:
+        exporters: [otlphttp]

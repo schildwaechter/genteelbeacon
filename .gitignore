@@ -1,1 +1,3 @@
 tmp/
+k8s/kustomization.yaml
+k8s/helm/*-secret.yaml

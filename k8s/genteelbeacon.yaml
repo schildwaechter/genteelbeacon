@@ -1,0 +1,201 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: genteelbeacon
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gildedgateway
+  namespace: genteelbeacon
+  labels:
+    app: gildedgateway
+    schildwaechter: genteelbeacon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gildedgateway
+  template:
+    metadata:
+      labels:
+        app: gildedgateway
+    spec:
+      containers:
+        - name: genteelbeacon
+          image: schildwaechter/genteelbeacon:main
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "10m"
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: servingport
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          envFrom:
+            - configMapRef:
+                name: gildedgateway
+          ports:
+            - name: servingport
+              containerPort: 1333
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gildedgateway
+  namespace: genteelbeacon
+data:
+  USENAME: "Gilded Gateway"
+  BACKEND: "http://regencyrelay:1333"
+  JSONLOGGING: "true"
+  OTEL_TRACES_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gildedgateway
+  namespace: genteelbeacon
+spec:
+  selector:
+    app: gildedgateway
+  ports:
+    - protocol: TCP
+      port: 1333
+      targetPort: 1333
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: regencyrelay
+  namespace: genteelbeacon
+  labels:
+    app: regencyrelay
+    schildwaechter: genteelbeacon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: regencyrelay
+  template:
+    metadata:
+      labels:
+        app: regencyrelay
+    spec:
+      containers:
+        - name: genteelbeacon
+          image: schildwaechter/genteelbeacon:main
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "10m"
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: servingport
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          envFrom:
+            - configMapRef:
+                name: regencyrelay
+          ports:
+            - name: servingport
+              containerPort: 1333
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: regencyrelay
+  namespace: genteelbeacon
+data:
+  USENAME: "Regency Relay"
+  BACKEND: "http://scribestudy:1333"
+  JSONLOGGING: "true"
+  OTEL_TRACES_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: regencyrelay
+  namespace: genteelbeacon
+spec:
+  selector:
+    app: regencyrelay
+  ports:
+    - protocol: TCP
+      port: 1333
+      targetPort: 1333
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scribestudy
+  namespace: genteelbeacon
+  labels:
+    app: scribestudy
+    schildwaechter: genteelbeacon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scribestudy
+  template:
+    metadata:
+      labels:
+        app: scribestudy
+    spec:
+      containers:
+        - name: genteelbeacon
+          image: schildwaechter/genteelbeacon:main
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "10m"
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: servingport
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          envFrom:
+            - configMapRef:
+                name: scribestudy
+          ports:
+            - name: servingport
+              containerPort: 1333
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scribestudy
+  namespace: genteelbeacon
+data:
+  USENAME: "Scribe Study"
+  JSONLOGGING: "true"
+  OTEL_TRACES_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scribestudy
+  namespace: genteelbeacon
+spec:
+  selector:
+    app: scribestudy
+  ports:
+    - protocol: TCP
+      port: 1333
+      targetPort: 1333

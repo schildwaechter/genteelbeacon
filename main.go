@@ -62,6 +62,26 @@ func main() {
 		nodeName = "unknown host"
 	}
 
+	app := fiber.New()
+	app.Use(requestid.New())
+
+	app.Use(healthcheck.New(healthcheck.Config{
+		LivenessProbe: func(c *fiber.Ctx) bool {
+			return true
+		},
+		LivenessEndpoint: "/livez",
+		ReadinessProbe: func(c *fiber.Ctx) bool {
+			return true
+		},
+		ReadinessEndpoint: "/readyz",
+	}))
+
+	app.Use(otelfiber.Middleware())
+
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.SendString("Genteel Beacon 🚨")
+	})
+
 	tracesEndpoint, ok := os.LookupEnv("OTEL_TRACES_ENDPOINT")
 	if ok {
 		tp, err := InitTracer(tracesEndpoint, useName)
@@ -76,10 +96,6 @@ func main() {
 		slog.Info("Not sending traces")
 	}
 
-	app := fiber.New()
-	app.Use(requestid.New())
-	app.Use(otelfiber.Middleware())
-
 	_, jsonLogging := os.LookupEnv("JSONLOGGING")
 	var logger *slog.Logger
 	if jsonLogging {
@@ -91,25 +107,14 @@ func main() {
 	app.Use(slogfiber.New(logger))
 	app.Use(recover.New())
 
-	app.Use(healthcheck.New(healthcheck.Config{
-		LivenessProbe: func(c *fiber.Ctx) bool {
-			return true
-		},
-		LivenessEndpoint: "/livez",
-		ReadinessProbe: func(c *fiber.Ctx) bool {
-			return true
-		},
-		ReadinessEndpoint: "/readyz",
-	}))
-
 	client := &http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	}
 
 	// Define a route for the root path '/'
-	app.Get("/", func(c *fiber.Ctx) error {
-		tracer := otel.Tracer("root")
-		ctx, span := tracer.Start(c.UserContext(), "Root Endpoint")
+	app.Get("/telegram", func(c *fiber.Ctx) error {
+		tracer := otel.Tracer("telegram")
+		ctx, span := tracer.Start(c.UserContext(), "Telegram Endpoint")
 		span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 		defer span.End()
 
@@ -118,15 +123,11 @@ func main() {
 		backend, ok := os.LookupEnv("BACKEND")
 		if ok {
 
-			req, err := http.NewRequestWithContext(ctx, "GET", backend, nil)
+			req, err := http.NewRequestWithContext(ctx, "GET", backend+"/telegram", nil)
 			req.Header.Set("X-Request-Id", slogfiber.GetRequestIDFromContext(c.Context()))
 
 			// Inject TraceParent to Context
 			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-
-			for k, v := range req.Header {
-				slog.Info("%s: %s\n", k, v)
-			}
 
 			resp, err := client.Do(req)
 			if err != nil {
