@@ -7,13 +7,13 @@ tmp_dir = "tmp"
   bin = "./tmp/main"
   cmd = "go build -ldflags \"-X main.buildEpoch=$(date '+%s')\" -o ./tmp/main ."
   delay = 1000
-  exclude_dir = ["assets", "tmp", "vendor", "testdata"]
+  exclude_dir = ["assets", "k8s", "tmp", "vendor", "testdata"]
   exclude_file = []
   exclude_regex = ["_test.go"]
   exclude_unchanged = false
   follow_symlink = false
   full_bin = ""
-  include_dir = ["k8s"]
+  include_dir = []
   include_ext = ["go", "tpl", "tmpl", "html"]
   include_file = []
   kill_delay = "0s"

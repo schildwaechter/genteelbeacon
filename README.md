@@ -2,7 +2,9 @@
 
 ## Building
 
-Provide build timestamp
+The repository is set up for [Air](https://github.com/air-verse/air) and [Docker](https://hub.docker.com/r/schildwaechter/genteelbeacon) build.
+
+When building manually, provide the build timestamp
 
 ```shell
 go build -ldflags "-X main.buildEpoch=$(date '+%s')" .
@@ -22,7 +24,7 @@ curl http://localhost:1333/telegram
 There are options to send traces to an OpenTelemetry Endpoint, log in JSON and more, based on these environment variables.
 
 * `USENAME` -- The name the application identifies as
-* `OTEL_TRACES_ENDPOINT` -- OTLP/HTTP-Endpoint to send traces to (no `http://`-prefix!)
+* `OTLPHTTP_ENDPOINT` -- OTLP/HTTP-Endpoint to send metrics & traces to (no `http://`-prefix!)
 * `JSONLOGGING` -- If set, will cause the logs to be emitted in JSON to `stdout`
 * `BACKEND` -- The URL of another Genteel Beacon to query
 * `RUNPORT` -- The port to serve on, defaults to `1333` if unset

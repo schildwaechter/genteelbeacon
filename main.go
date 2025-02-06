@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/ansrivas/fiberprometheus/v2"
 	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/healthcheck"
@@ -18,8 +19,10 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
@@ -35,9 +38,9 @@ func getEnv(name string, defaultValue string) string {
 	}
 	return defaultValue
 }
-func InitTracer(tracesEndpoint string, serviceName string) (*trace.TracerProvider, error) {
+func InitTracer(otlphttpEndpoint string, serviceName string) (*trace.TracerProvider, error) {
 	ctx := context.Background()
-	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(tracesEndpoint), otlptracehttp.WithInsecure())
+	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(otlphttpEndpoint), otlptracehttp.WithInsecure())
 	if err != nil {
 		return nil, err
 	}
@@ -52,6 +55,25 @@ func InitTracer(tracesEndpoint string, serviceName string) (*trace.TracerProvide
 	otel.SetTracerProvider(tracerProvider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	return tracerProvider, nil
+}
+
+func InitMeter(otlphttpEndpoint string, serviceName string) (*metric.MeterProvider, error) {
+	ctx := context.Background()
+	metricExporter, err := otlpmetrichttp.New(ctx, otlpmetrichttp.WithEndpoint(otlphttpEndpoint), otlpmetrichttp.WithInsecure())
+	if err != nil {
+		return nil, err
+	}
+
+	meterProvider := metric.NewMeterProvider(
+		metric.WithReader(metric.NewPeriodicReader(metricExporter)),
+		metric.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(serviceName),
+		)),
+	)
+	otel.SetMeterProvider(meterProvider)
+
+	return meterProvider, nil
 }
 
 func main() {
@@ -82,19 +104,30 @@ func main() {
 		return c.SendString("Genteel Beacon 🚨")
 	})
 
-	tracesEndpoint, ok := os.LookupEnv("OTEL_TRACES_ENDPOINT")
+	otlphttpEndpoint, ok := os.LookupEnv("OTLPHTTP_ENDPOINT")
 	if ok {
-		tp, err := InitTracer(tracesEndpoint, useName)
+		tp, err := InitTracer(otlphttpEndpoint, useName)
 		if err != nil {
 			slog.Error("Can't send traces")
 		}
 		defer func() {
 			_ = tp.Shutdown(context.Background())
 		}()
-		slog.Info("Sending traces to " + tracesEndpoint)
+		mp, err := InitMeter(otlphttpEndpoint, useName)
+		if err != nil {
+			log.Fatal("Can't send metrics")
+		}
+		defer func() {
+			_ = mp.Shutdown(context.Background())
+		}()
+		slog.Info("Sending OTEL data to " + otlphttpEndpoint)
 	} else {
-		slog.Info("Not sending traces")
+		slog.Info("Not sending OTEL data")
 	}
+	prometheus := fiberprometheus.New(useName)
+	prometheus.RegisterAt(app, "/metrics")
+
+	app.Use(prometheus.Middleware)
 
 	_, jsonLogging := os.LookupEnv("JSONLOGGING")
 	var logger *slog.Logger

@@ -54,7 +54,7 @@ data:
   USENAME: "Gilded Gateway"
   BACKEND: "http://regencyrelay:1333"
   JSONLOGGING: "true"
-  OTEL_TRACES_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
+  OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1
 kind: Service
@@ -120,7 +120,7 @@ data:
   USENAME: "Regency Relay"
   BACKEND: "http://scribestudy:1333"
   JSONLOGGING: "true"
-  OTEL_TRACES_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
+  OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1
 kind: Service
@@ -185,7 +185,7 @@ metadata:
 data:
   USENAME: "Scribe Study"
   JSONLOGGING: "true"
-  OTEL_TRACES_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
+  OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1
 kind: Service

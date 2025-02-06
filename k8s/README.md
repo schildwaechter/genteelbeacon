@@ -6,7 +6,7 @@ Suggested to have [Kubernetes Cloud Provider for KIND](https://github.com/kubern
 ## Create the cluster
 
 ```shell
-kind create cluster --name simplecluster --image kindest/node:v1.31.4
+kind create cluster --name genteelbeacon --image kindest/node:v1.31.4
 ```
 
 ## Install a Genteel Beacon setup
@@ -91,6 +91,6 @@ And update your image tag,
 ## Clean up
 
 ```shell
-kind delete cluster --name simplecluster
+kind delete cluster --name genteelbeacon
 docker image list
 ```
