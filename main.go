@@ -42,6 +42,7 @@ import (
 var (
 	buildEpoch string = "0"
 	tracer     trace.Tracer
+	logger     *slog.Logger
 )
 
 // Get environment variable with a default
@@ -109,19 +110,36 @@ func InitLogger(otlphttpEndpoint string, serviceName string) (*otellog.LoggerPro
 	return logProvider, nil
 }
 
+func loggerTraceAttr(ctx context.Context, span trace.Span) slog.Attr {
+	var trace_attr slog.Attr
+	if trace.SpanFromContext(ctx).SpanContext().HasTraceID() {
+		trace_attr = slog.String("trace_id", span.SpanContext().TraceID().String())
+	}
+	return trace_attr
+}
+func loggerSpanAttr(ctx context.Context, span trace.Span) slog.Attr {
+	var span_attr slog.Attr
+	if trace.SpanFromContext(ctx).SpanContext().HasSpanID() {
+		span_attr = slog.String("span_id", span.SpanContext().SpanID().String())
+	}
+	return span_attr
+}
 func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	_, span := tracer.Start(ctx, "Grease Grate")
 	defer span.End()
 
 	if rand.Float64() > 0.95 {
-		time.Sleep(8 * time.Millisecond) // artifical slowdown
-		err := errors.New("Grease Issue!")
-		//span.RecordError(err)
+		time.Sleep(8 * time.Millisecond) // artificial span increase
+		err := errors.New("Grease Issue 💀")
+		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		slog.Error(err.Error())
-		return err
+
+		logger.ErrorContext(ctx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+
 	} else {
-		time.Sleep(1 * time.Millisecond) // artifical slowdown
+		time.Sleep(1 * time.Millisecond) // artificial span increase
 	}
 
 	return nil
@@ -131,18 +149,22 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, useName string, reque
 	_, span := tracer.Start(ctx, "Scribe Study")
 	defer span.End()
 
+	logger.DebugContext(ctx, "scribe 🖊️")
+
 	nodeName, err := os.Hostname()
 	if err != nil {
 		nodeName = "unknown host"
 	}
 
-	time.Sleep(time.Duration(rand.IntN(100)+1) * time.Millisecond) // artifical slowdown
+	time.Sleep(time.Duration(rand.IntN(100)+1) * time.Millisecond) // artificial span increase
 	return "Build time: " + buildEpoch + ", »" + useName + "« running on " + nodeName + " 🙋 " + requestId
 }
 
-func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, backend string) (bool, string) {
+func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, backend string) (error, string) {
 	_, span := tracer.Start(ctx, "CourteousCourier")
 	defer span.End()
+
+	logger.DebugContext(ctx, "courier 🐦")
 
 	req, err := http.NewRequestWithContext(ctx, "GET", backend+"/telegram", nil)
 
@@ -152,19 +174,19 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	resp, err := client.Do(req)
 	if err != nil {
 		span.RecordError(err)
-		slog.ErrorContext(ctx, "Error calling backend!")
-		return false, "Error calling backend!"
+		logger.ErrorContext(ctx, "Error calling backend!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+		return err, "Error calling backend!"
 	}
 	defer resp.Body.Close()
 
 	responseData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		span.RecordError(err)
-		log.Fatal(err)
-		return false, ""
+		logger.ErrorContext(ctx, err.Error())
+		return nil, ""
 	}
 
-	return true, string(responseData)
+	return nil, string(responseData)
 }
 
 func main() {
@@ -225,7 +247,6 @@ func main() {
 	//slog.SetDefault(otelslog.NewLogger(useName))
 
 	_, jsonLogging := os.LookupEnv("JSONLOGGING")
-	var logger *slog.Logger
 	if jsonLogging {
 		logger = slog.New(
 			slogmulti.Fanout(
@@ -237,13 +258,16 @@ func main() {
 		logger = slog.New(
 			slogmulti.Fanout(
 				otelslog.NewLogger(useName).Handler(),
-				//slog.Default().Handler(),
-				slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}),
+				slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}),
 			),
 		)
 	}
-	//slog.SetDefault(logger)
-	app.Use(slogfiber.New(logger))
+	loggerConfig := slogfiber.Config{
+		WithSpanID:    true,
+		WithTraceID:   true,
+		WithRequestID: true,
+	}
+	app.Use(slogfiber.NewWithConfig(logger, loggerConfig))
 	app.Use(recover.New())
 
 	client := &http.Client{
@@ -258,26 +282,31 @@ func main() {
 		span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 		defer span.End()
 
-		greaseGrate(ctx, tracer)
+		greaseErr := greaseGrate(ctx, tracer)
+
+		if greaseErr != nil {
+			return greaseErr
+		}
 
 		var backendResponseString string
-		var backendResponse bool = false
-		backend, ok := os.LookupEnv("BACKEND")
-		if ok {
-
-			backendResponse, backendResponseString = courteousCourier(ctx, tracer, client, backend)
-
-		} else {
-			slog.Debug("No backend defined")
-		}
+		var backendResponseError error = nil
+		backend, useBackend := os.LookupEnv("BACKEND")
 
 		scribeStudyMessage := scribeStudy(ctx, tracer, useName, slogfiber.GetRequestIDFromContext(c.Context()))
-		if backendResponse {
-			return c.SendString(scribeStudyMessage + " 📫 " + backendResponseString)
 
+		if useBackend {
+			backendResponseError, backendResponseString = courteousCourier(ctx, tracer, client, backend)
+			if backendResponseError == nil {
+				return c.SendString(scribeStudyMessage + " 📫 " + backendResponseString)
+
+			} else {
+				return fiber.NewError(fiber.StatusServiceUnavailable, backendResponseString+": "+scribeStudyMessage+" 🛑")
+			}
 		} else {
+			logger.Debug("No backend defined")
 			return c.SendString(scribeStudyMessage + " 🏁")
 		}
+
 	})
 
 	// Start the server on the specified port and address
