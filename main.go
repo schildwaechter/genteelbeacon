@@ -15,17 +15,23 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	slogfiber "github.com/samber/slog-fiber"
+	slogmulti "github.com/samber/slog-multi"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
+	otellog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+
+	"go.opentelemetry.io/contrib/bridges/otelslog"
 )
 
 var buildEpoch string = "0"
@@ -76,6 +82,25 @@ func InitMeter(otlphttpEndpoint string, serviceName string) (*metric.MeterProvid
 	return meterProvider, nil
 }
 
+func InitLogger(otlphttpEndpoint string, serviceName string) (*otellog.LoggerProvider, error) {
+	ctx := context.Background()
+	logExporter, err := otlploghttp.New(ctx, otlploghttp.WithEndpoint(otlphttpEndpoint), otlploghttp.WithInsecure())
+	if err != nil {
+		return nil, err
+	}
+
+	logProvider := otellog.NewLoggerProvider(
+		otellog.WithProcessor(otellog.NewBatchProcessor(logExporter)),
+		otellog.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(serviceName),
+		)),
+	)
+	global.SetLoggerProvider(logProvider)
+
+	return logProvider, nil
+}
+
 func main() {
 	// our names
 	useName := getEnv("USENAME", "Genteel Beacon")
@@ -120,6 +145,13 @@ func main() {
 		defer func() {
 			_ = mp.Shutdown(context.Background())
 		}()
+		lp, err := InitLogger(otlphttpEndpoint, useName)
+		if err != nil {
+			log.Fatal("Can't send logs")
+		}
+		defer func() {
+			_ = lp.Shutdown(context.Background())
+		}()
 		slog.Info("Sending OTEL data to " + otlphttpEndpoint)
 	} else {
 		slog.Info("Not sending OTEL data")
@@ -128,13 +160,24 @@ func main() {
 	prometheus.RegisterAt(app, "/metrics")
 
 	app.Use(prometheus.Middleware)
+	slog.SetDefault(otelslog.NewLogger(useName))
 
 	_, jsonLogging := os.LookupEnv("JSONLOGGING")
 	var logger *slog.Logger
 	if jsonLogging {
-		logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+		logger = slog.New(
+			slogmulti.Fanout(
+				slog.Default().Handler(),
+				slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}),
+			),
+		)
 	} else {
-		logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+		logger = slog.New(
+			slogmulti.Fanout(
+				slog.Default().Handler(),
+				slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}),
+			),
+		)
 	}
 	//slog.SetDefault(logger)
 	app.Use(slogfiber.New(logger))
@@ -157,7 +200,6 @@ func main() {
 		if ok {
 
 			req, err := http.NewRequestWithContext(ctx, "GET", backend+"/telegram", nil)
-			req.Header.Set("X-Request-Id", slogfiber.GetRequestIDFromContext(c.Context()))
 
 			// Inject TraceParent to Context
 			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
@@ -188,7 +230,8 @@ func main() {
 		}
 	})
 
-	// Start the server on the specified port
-	runPort := getEnv("RUNPORT", "1333")
-	log.Fatal(app.Listen(":" + runPort))
+	// Start the server on the specified port and address
+	appPort := getEnv("APP_PORT", "1333")
+	appAddr := getEnv("APP_ADDR", "1333")
+	log.Fatal(app.Listen(appAddr + ":" + appPort))
 }

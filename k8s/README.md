@@ -28,7 +28,6 @@ Add your endpoint and credentials in a `-secret` file to replace the `PLACEHOLDE
 ```shell
 kubectl create ns otel
 helm upgrade --install -n otel otelcol open-telemetry/opentelemetry-collector -f helm/otelcol-deployment-values.yaml -f helm/otelcol-deployment-values-secret.yaml
-helm upgrade --install -n otel otelds open-telemetry/opentelemetry-collector -f helm/otelcol-deamonset-values.yaml
 ```
 
 ## Customize with Kustomize
