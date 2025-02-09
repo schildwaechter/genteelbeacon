@@ -75,7 +75,7 @@ kubectl rollout restart deployment -n genteelbeacon --selector=schildwaechter=ge
 
 ## Local builds
 
-Use th power of KIND
+Use the power of KIND (not with Podman)
 
 ```shell
 export LOCALTAG="local-${RANDOM}" && echo $LOCALTAG
@@ -84,8 +84,6 @@ kind load --name genteelbeacon docker-image schildwaechter/genteelbeacon:$LOCALT
 sed -i "s/schildwaechter\/genteelbeacon:\(.*\)/schildwaechter\/genteelbeacon:${LOCALTAG}/" k8s/kustomization.yaml
 kubectl apply -k k8s/
 ```
-
-And update your image tag,
 
 ## Clean up
 

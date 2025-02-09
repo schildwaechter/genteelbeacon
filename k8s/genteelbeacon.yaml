@@ -36,8 +36,16 @@ spec:
             httpGet:
               path: /livez
               port: servingport
-            initialDelaySeconds: 3
-            periodSeconds: 10
+            failureThreshold: 1
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: servingport
+            failureThreshold: 1
+            initialDelaySeconds: 5
+            periodSeconds: 5
           envFrom:
             - configMapRef:
                 name: gildedgateway
@@ -51,7 +59,7 @@ metadata:
   name: gildedgateway
   namespace: genteelbeacon
 data:
-  USENAME: "Gilded Gateway"
+  APP_NAME: "Gilded Gateway"
   BACKEND: "http://regencyrelay:1333"
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
@@ -101,8 +109,16 @@ spec:
             httpGet:
               path: /livez
               port: servingport
-            initialDelaySeconds: 3
-            periodSeconds: 10
+            failureThreshold: 1
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: servingport
+            failureThreshold: 1
+            initialDelaySeconds: 5
+            periodSeconds: 5
           envFrom:
             - configMapRef:
                 name: regencyrelay
@@ -116,7 +132,7 @@ metadata:
   name: regencyrelay
   namespace: genteelbeacon
 data:
-  USENAME: "Regency Relay"
+  APP_NAME: "Regency Relay"
   BACKEND: "http://elegantendeavors:1333"
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
@@ -166,11 +182,19 @@ spec:
             httpGet:
               path: /livez
               port: servingport
-            initialDelaySeconds: 3
-            periodSeconds: 10
+            failureThreshold: 1
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: servingport
+            failureThreshold: 1
+            initialDelaySeconds: 5
+            periodSeconds: 5
           envFrom:
             - configMapRef:
-                name: scribestudy
+                name: elegantendeavors
           ports:
             - name: servingport
               containerPort: 1333
@@ -181,7 +205,7 @@ metadata:
   name: elegantendeavors
   namespace: genteelbeacon
 data:
-  USENAME: "Elegant Endeavors, Esq."
+  APP_NAME: "Elegant Endeavors, Esq."
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1

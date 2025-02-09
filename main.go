@@ -135,7 +135,7 @@ func loggerSpanAttr(ctx context.Context, span trace.Span) slog.Attr {
 func updateGreaseFactor() {
 	go func() {
 		for {
-			greaseFactor = float64(totalAnswers) / time.Since(startTime).Seconds()
+			greaseFactor = float64(totalAnswers) / (time.Since(startTime).Seconds() + 10)
 			greaseFactorGauge.Set(greaseFactor)
 			time.Sleep(1 * time.Second)
 		}
@@ -163,7 +163,7 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	return nil
 }
 
-func scribeStudy(ctx context.Context, tracer trace.Tracer, useName string, requestId string) string {
+func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, requestId string) string {
 	ctx, span := tracer.Start(ctx, "Scribe Study")
 	defer span.End()
 
@@ -182,7 +182,7 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, useName string, reque
 	}
 
 	theTime := time.Now().Format("2006-01-02 15:04:05")
-	return "🕰️ The Time is " + theTime + "\nBuild time: " + buildEpoch + ", »" + useName + "« running on " + nodeName + " 🙋 " + requestId
+	return "🕰️ The Time is " + theTime + "\nBuild time: " + buildEpoch + ", »" + appName + "« running on " + nodeName + " 🙋 " + requestId
 
 }
 
@@ -217,7 +217,7 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 
 func main() {
 	// our names
-	useName := getEnv("USENAME", "Genteel Beacon")
+	appName := getEnv("APP_NAME", "Genteel Beacon")
 	startTime = time.Now()
 
 	greaseFactorGauge = promauto.NewGauge(prometheus.GaugeOpts{
@@ -250,23 +250,28 @@ func main() {
 		return c.SendString("Genteel Beacon 🚨")
 	})
 
+	prometheus := fiberprometheus.NewWithDefaultRegistry(appName)
+	prometheus.RegisterAt(app, "/metrics")
+
+	app.Use(prometheus.Middleware)
+
 	otlphttpEndpoint, ok := os.LookupEnv("OTLPHTTP_ENDPOINT")
 	if ok {
-		tp, err := InitTracer(otlphttpEndpoint, useName)
+		tp, err := InitTracer(otlphttpEndpoint, appName)
 		if err != nil {
 			slog.Error("Can't send traces")
 		}
 		defer func() {
 			_ = tp.Shutdown(context.Background())
 		}()
-		mp, err := InitMeter(otlphttpEndpoint, useName)
+		mp, err := InitMeter(otlphttpEndpoint, appName)
 		if err != nil {
 			log.Fatal("Can't send metrics")
 		}
 		defer func() {
 			_ = mp.Shutdown(context.Background())
 		}()
-		lp, err := InitLogger(otlphttpEndpoint, useName)
+		lp, err := InitLogger(otlphttpEndpoint, appName)
 		if err != nil {
 			log.Fatal("Can't send logs")
 		}
@@ -277,12 +282,6 @@ func main() {
 	} else {
 		slog.Info("Not sending OTEL data")
 	}
-	prometheus := fiberprometheus.NewWithDefaultRegistry(useName)
-	prometheus.RegisterAt(app, "/metrics")
-
-	app.Use(prometheus.Middleware)
-	//slog.SetDefault(otelslog.NewLogger(useName))
-
 	_, jsonLogging := os.LookupEnv("JSONLOGGING")
 	if jsonLogging {
 		logger = slog.New(
@@ -294,7 +293,7 @@ func main() {
 	} else {
 		logger = slog.New(
 			slogmulti.Fanout(
-				otelslog.NewLogger(useName).Handler(),
+				otelslog.NewLogger(appName).Handler(),
 				slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}),
 			),
 		)
@@ -311,7 +310,7 @@ func main() {
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	}
 
-	tracer = otel.Tracer("my tracer")
+	tracer = otel.Tracer(appName)
 
 	// Define a route for the root path '/'
 	app.Get("/telegram", func(c *fiber.Ctx) error {
@@ -330,19 +329,19 @@ func main() {
 		var backendResponseError error = nil
 		backend, useBackend := os.LookupEnv("BACKEND")
 
-		scribeStudyMessage := scribeStudy(ctx, tracer, useName, slogfiber.GetRequestIDFromContext(c.Context()))
+		scribeStudyMessage := scribeStudy(ctx, tracer, appName, slogfiber.GetRequestIDFromContext(c.Context()))
 
-		if useBackend {
+		if useBackend && rand.Float64() < 0.4 {
 			backendResponseError, backendResponseString = courteousCourier(ctx, tracer, client, backend)
 			if backendResponseError == nil {
-				return c.SendString(scribeStudyMessage + " 📫 " + backendResponseString)
+				return c.SendString(scribeStudyMessage + " 📫 \n" + backendResponseString)
 
 			} else {
 				return fiber.NewError(fiber.StatusServiceUnavailable, backendResponseString+": "+scribeStudyMessage+" 🛑")
 			}
 		} else {
 			logger.Debug("No backend defined")
-			return c.SendString(scribeStudyMessage + " 🏁")
+			return c.SendString(scribeStudyMessage + " 🏁\n")
 		}
 
 	})
