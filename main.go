@@ -20,6 +20,9 @@ import (
 	slogfiber "github.com/samber/slog-fiber"
 	slogmulti "github.com/samber/slog-multi"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -40,9 +43,13 @@ import (
 )
 
 var (
-	buildEpoch string = "0"
-	tracer     trace.Tracer
-	logger     *slog.Logger
+	buildEpoch        string = "0"
+	startTime         time.Time
+	greaseFactor      float64 = 1.0
+	greaseFactorGauge prometheus.Gauge
+	totalAnswers      int64 = 0
+	tracer            trace.Tracer
+	logger            *slog.Logger
 )
 
 // Get environment variable with a default
@@ -53,6 +60,7 @@ func getEnv(name string, defaultValue string) string {
 	}
 	return defaultValue
 }
+
 func InitTracer(otlphttpEndpoint string, serviceName string) (*sdktrace.TracerProvider, error) {
 	ctx := context.Background()
 	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(otlphttpEndpoint), otlptracehttp.WithInsecure())
@@ -124,11 +132,21 @@ func loggerSpanAttr(ctx context.Context, span trace.Span) slog.Attr {
 	}
 	return span_attr
 }
+func updateGreaseFactor() {
+	go func() {
+		for {
+			greaseFactor = float64(totalAnswers) / time.Since(startTime).Seconds()
+			greaseFactorGauge.Set(greaseFactor)
+			time.Sleep(1 * time.Second)
+		}
+	}()
+}
+
 func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	_, span := tracer.Start(ctx, "Grease Grate")
 	defer span.End()
 
-	if rand.Float64() > 0.95 {
+	if rand.Float64() > 0.96 { // occasional failure, together with scribe issue 95%
 		time.Sleep(8 * time.Millisecond) // artificial span increase
 		err := errors.New("Grease Issue 💀")
 		span.RecordError(err)
@@ -146,25 +164,33 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 }
 
 func scribeStudy(ctx context.Context, tracer trace.Tracer, useName string, requestId string) string {
-	_, span := tracer.Start(ctx, "Scribe Study")
+	ctx, span := tracer.Start(ctx, "Scribe Study")
 	defer span.End()
 
-	logger.DebugContext(ctx, "scribe 🖊️")
+	logger.DebugContext(ctx, "Scribe 🖊️")
 
 	nodeName, err := os.Hostname()
 	if err != nil {
 		nodeName = "unknown host"
 	}
 
-	time.Sleep(time.Duration(rand.IntN(100)+1) * time.Millisecond) // artificial span increase
-	return "Build time: " + buildEpoch + ", »" + useName + "« running on " + nodeName + " 🙋 " + requestId
+	if rand.Float64() < 0.01 { // very rare super long delay, together with grate issue 95%
+		logger.WarnContext(ctx, "Scribe dropped the pen 🔍!!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+		time.Sleep(2 * time.Second) // uppss...
+	} else {
+		time.Sleep(time.Duration(rand.IntN(100)+1) * time.Millisecond) // normal artificial span increase
+	}
+
+	theTime := time.Now().Format("2006-01-02 15:04:05")
+	return "🕰️ The Time is " + theTime + "\nBuild time: " + buildEpoch + ", »" + useName + "« running on " + nodeName + " 🙋 " + requestId
+
 }
 
 func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, backend string) (error, string) {
 	_, span := tracer.Start(ctx, "CourteousCourier")
 	defer span.End()
 
-	logger.DebugContext(ctx, "courier 🐦")
+	logger.DebugContext(ctx, "courier 🐦", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", backend+"/telegram", nil)
 
@@ -192,6 +218,13 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 func main() {
 	// our names
 	useName := getEnv("USENAME", "Genteel Beacon")
+	startTime = time.Now()
+
+	greaseFactorGauge = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "genteelbeacon_greasefactor",
+		Help: "The Genteel Beacon's current grease factor",
+	})
+	updateGreaseFactor()
 
 	app := fiber.New()
 	app.Use(requestid.New())
@@ -202,7 +235,11 @@ func main() {
 		},
 		LivenessEndpoint: "/livez",
 		ReadinessProbe: func(c *fiber.Ctx) bool {
-			return true
+			if greaseFactor < 1 {
+				return true
+			} else {
+				return false
+			}
 		},
 		ReadinessEndpoint: "/readyz",
 	}))
@@ -240,7 +277,7 @@ func main() {
 	} else {
 		slog.Info("Not sending OTEL data")
 	}
-	prometheus := fiberprometheus.New(useName)
+	prometheus := fiberprometheus.NewWithDefaultRegistry(useName)
 	prometheus.RegisterAt(app, "/metrics")
 
 	app.Use(prometheus.Middleware)
@@ -282,6 +319,7 @@ func main() {
 		span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 		defer span.End()
 
+		totalAnswers += 1
 		greaseErr := greaseGrate(ctx, tracer)
 
 		if greaseErr != nil {
