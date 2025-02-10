@@ -81,7 +81,7 @@ Use the power of KIND (not with Podman)
 export LOCALTAG="local-${RANDOM}" && echo $LOCALTAG
 docker build -t schildwaechter/genteelbeacon:$LOCALTAG .
 kind load --name genteelbeacon docker-image schildwaechter/genteelbeacon:$LOCALTAG
-sed -i "s/schildwaechter\/genteelbeacon:\(.*\)/schildwaechter\/genteelbeacon:${LOCALTAG}/" k8s/kustomization.yaml
+sed -i.bak "s/schildwaechter\/genteelbeacon:\(.*\)/schildwaechter\/genteelbeacon:${LOCALTAG}/" k8s/kustomization.yaml
 kubectl apply -k k8s/
 ```
 

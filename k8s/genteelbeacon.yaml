@@ -36,14 +36,14 @@ spec:
             httpGet:
               path: /livez
               port: servingport
-            failureThreshold: 1
+            failureThreshold: 3
             initialDelaySeconds: 5
             periodSeconds: 5
           readinessProbe:
             httpGet:
               path: /readyz
               port: servingport
-            failureThreshold: 1
+            failureThreshold: 3
             initialDelaySeconds: 5
             periodSeconds: 5
           envFrom:
@@ -109,14 +109,14 @@ spec:
             httpGet:
               path: /livez
               port: servingport
-            failureThreshold: 1
+            failureThreshold: 3
             initialDelaySeconds: 5
             periodSeconds: 5
           readinessProbe:
             httpGet:
               path: /readyz
               port: servingport
-            failureThreshold: 1
+            failureThreshold: 3
             initialDelaySeconds: 5
             periodSeconds: 5
           envFrom:
@@ -182,14 +182,14 @@ spec:
             httpGet:
               path: /livez
               port: servingport
-            failureThreshold: 1
+            failureThreshold: 3
             initialDelaySeconds: 5
             periodSeconds: 5
           readinessProbe:
             httpGet:
               path: /readyz
               port: servingport
-            failureThreshold: 1
+            failureThreshold: 3
             initialDelaySeconds: 5
             periodSeconds: 5
           envFrom:

@@ -1,5 +1,5 @@
 # build the binary
-FROM golang:latest as builder
+FROM golang:latest AS builder
 WORKDIR /go/src/genteelbeacon
 COPY *.go /go/src/genteelbeacon/
 COPY go.* /go/src/genteelbeacon/
