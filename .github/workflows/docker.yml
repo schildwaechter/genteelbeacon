@@ -25,6 +25,9 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ github.repository }}
+          tags: |
+            type=ref
+            type=sha
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
