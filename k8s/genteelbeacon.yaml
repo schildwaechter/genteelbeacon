@@ -25,6 +25,7 @@ spec:
       containers:
         - name: genteelbeacon
           image: schildwaechter/genteelbeacon:main
+          imagePullPolicy: Always
           resources:
             requests:
               memory: "64Mi"
@@ -98,6 +99,7 @@ spec:
       containers:
         - name: genteelbeacon
           image: schildwaechter/genteelbeacon:main
+          imagePullPolicy: Always
           resources:
             requests:
               memory: "64Mi"
@@ -171,6 +173,7 @@ spec:
       containers:
         - name: genteelbeacon
           image: schildwaechter/genteelbeacon:main
+          imagePullPolicy: Always
           resources:
             requests:
               memory: "64Mi"

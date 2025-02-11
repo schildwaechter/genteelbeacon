@@ -27,7 +27,6 @@ jobs:
           images: ${{ github.repository }}
           tags: |
             type=ref,event=branch
-            type=sha
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
