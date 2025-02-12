@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -68,7 +69,7 @@ func getEnv(name string, defaultValue string) string {
 	return defaultValue
 }
 
-func InitTracer(otlphttpEndpoint string, serviceName string) (*sdktrace.TracerProvider, error) {
+func initTracer(otlphttpEndpoint string, serviceName string) (*sdktrace.TracerProvider, error) {
 	ctx := context.Background()
 	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(otlphttpEndpoint), otlptracehttp.WithInsecure())
 	if err != nil {
@@ -87,7 +88,7 @@ func InitTracer(otlphttpEndpoint string, serviceName string) (*sdktrace.TracerPr
 	return tracerProvider, nil
 }
 
-func InitMeter(otlphttpEndpoint string, serviceName string) (*sdkmetric.MeterProvider, error) {
+func initMeter(otlphttpEndpoint string, serviceName string) (*sdkmetric.MeterProvider, error) {
 	ctx := context.Background()
 	metricExporter, err := otlpmetrichttp.New(ctx, otlpmetrichttp.WithEndpoint(otlphttpEndpoint), otlpmetrichttp.WithInsecure())
 	if err != nil {
@@ -106,7 +107,7 @@ func InitMeter(otlphttpEndpoint string, serviceName string) (*sdkmetric.MeterPro
 	return meterProvider, nil
 }
 
-func InitLogger(otlphttpEndpoint string, serviceName string) (*sdklog.LoggerProvider, error) {
+func initLogger(otlphttpEndpoint string, serviceName string) (*sdklog.LoggerProvider, error) {
 	ctx := context.Background()
 	logExporter, err := otlploghttp.New(ctx, otlploghttp.WithEndpoint(otlphttpEndpoint), otlploghttp.WithInsecure())
 	if err != nil {
@@ -144,16 +145,22 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	_, span := tracer.Start(ctx, "Grease Grate")
 	defer span.End()
 
-	if rand.Float64() > 0.96 { // occasional failure, together with scribe issue 95%
-		time.Sleep(8 * time.Millisecond) // artificial span increase
-		err := errors.New("Grease Issue 💀")
+	// Whether to trip (between 0 and 1)
+	tripValue := rand.Float64()
+	// The threshold to trip the grease grate:
+	// not below 0.9, increasing probablility from 0.9-1 and always above
+	tripThreshold := (greaseFactor - 0.9) * 10
+
+	slog.Info(fmt.Sprintf("greaseFactor %f - tripThreshold %f - tripValue %f", greaseFactor, tripThreshold, tripValue))
+
+	if tripValue < tripThreshold {
+		err := errors.New("Grease Grate clogged 💀")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 
 		logger.ErrorContext(ctx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
 
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-
 	} else {
 		time.Sleep(1 * time.Millisecond) // artificial span increase
 	}
@@ -161,7 +168,7 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	return nil
 }
 
-func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, requestId string) string {
+func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, requestId string) (string, error) {
 	ctx, span := tracer.Start(ctx, "Scribe Study")
 	defer span.End()
 
@@ -172,16 +179,34 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, reque
 		nodeName = "unknown host"
 	}
 
-	if rand.Float64() < 0.01 { // very rare super long delay, together with grate issue 95%
+	scribeErrorChance := rand.Float64()
+	scribeSignature := "\nBuild time: " + buildEpoch + ", »" + appName + "« running on " + nodeName + " 🙋 " + requestId
+
+	if scribeErrorChance < 0.01 { // very rare super long delay
 		logger.WarnContext(ctx, "Scribe dropped the pen 🔍!!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
-		time.Sleep(2 * time.Second) // uppss...
+		time.Sleep(3 * time.Second) // uppss...
+	} else if scribeErrorChance > 0.99 { // somestimes it can't wait
+		err := errors.New("Scribe seems to be having a break 🫖")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+
+		logger.ErrorContext(ctx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+
+		return "🕰️ The time is not available at this moment!!" + scribeSignature, fiber.NewError(fiber.StatusTeapot, err.Error())
+	} else if scribeErrorChance > 0.96 { // oh dear (if we haven't tripped before)
+		err := errors.New("Scribe seems to be indisposed 💩")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+
+		logger.ErrorContext(ctx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+
+		return "🕰️ The time is not available at this moment!!" + scribeSignature, fiber.NewError(fiber.StatusServiceUnavailable, err.Error())
 	} else {
 		time.Sleep(time.Duration(rand.IntN(100)+1) * time.Millisecond) // normal artificial span increase
 	}
 
 	theTime := time.Now().Format("2006-01-02 15:04:05")
-	return "🕰️ The Time is " + theTime + "\nBuild time: " + buildEpoch + ", »" + appName + "« running on " + nodeName + " 🙋 " + requestId
-
+	return "🕰️ The time is " + theTime + scribeSignature, nil
 }
 
 func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, backend string) (error, string) {
@@ -278,7 +303,7 @@ func main() {
 		},
 		LivenessEndpoint: "/livez",
 		ReadinessProbe: func(c *fiber.Ctx) bool {
-			if greaseFactor < 1 {
+			if greaseFactor < 0.9 {
 				return true
 			} else {
 				return false
@@ -301,21 +326,21 @@ func main() {
 
 	otlphttpEndpoint, ok := os.LookupEnv("OTLPHTTP_ENDPOINT")
 	if ok {
-		tp, err := InitTracer(otlphttpEndpoint, appName)
+		tp, err := initTracer(otlphttpEndpoint, appName)
 		if err != nil {
 			slog.Error("Can't send traces")
 		}
 		defer func() {
 			_ = tp.Shutdown(context.Background())
 		}()
-		mp, err := InitMeter(otlphttpEndpoint, appName)
+		mp, err := initMeter(otlphttpEndpoint, appName)
 		if err != nil {
 			log.Fatal("Can't send metrics")
 		}
 		defer func() {
 			_ = mp.Shutdown(context.Background())
 		}()
-		lp, err := InitLogger(otlphttpEndpoint, appName)
+		lp, err := initLogger(otlphttpEndpoint, appName)
 		if err != nil {
 			log.Fatal("Can't send logs")
 		}
@@ -356,7 +381,7 @@ func main() {
 
 	tracer = otel.Tracer(appName)
 
-	// Define a route for the root path '/'
+	// Define the route for the main path '/telegram'
 	app.Get("/telegram", func(c *fiber.Ctx) error {
 		ctx, span := tracer.Start(c.UserContext(), "Telegram Endpoint")
 		span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
@@ -373,13 +398,16 @@ func main() {
 		var backendResponseError error = nil
 		backend, useBackend := os.LookupEnv("BACKEND")
 
-		scribeStudyMessage := scribeStudy(ctx, tracer, appName, slogfiber.GetRequestIDFromContext(c.Context()))
+		scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, appName, slogfiber.GetRequestIDFromContext(c.Context()))
+
+		if scribeErr != nil {
+			return scribeErr
+		}
 
 		if useBackend && rand.Float64() < 0.4 {
 			backendResponseError, backendResponseString = courteousCourier(ctx, tracer, client, backend)
 			if backendResponseError == nil {
 				return c.SendString(scribeStudyMessage + " 📫 \n" + backendResponseString)
-
 			} else {
 				return fiber.NewError(fiber.StatusServiceUnavailable, backendResponseString+": "+scribeStudyMessage+" 🛑")
 			}
