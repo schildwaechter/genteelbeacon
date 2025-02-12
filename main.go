@@ -1,3 +1,8 @@
+// Schildwächter's Genteel Beacon
+// Copyright Carsten Thiel 2025
+//
+// SPDX-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -31,9 +36,10 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/log/global"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
-	otellog "go.opentelemetry.io/otel/sdk/log"
-	"go.opentelemetry.io/otel/sdk/metric"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
@@ -43,13 +49,14 @@ import (
 )
 
 var (
-	buildEpoch        string = "0"
-	startTime         time.Time
-	greaseFactor      float64 = 1.0
-	greaseFactorGauge prometheus.Gauge
-	totalAnswers      int64 = 0
-	tracer            trace.Tracer
-	logger            *slog.Logger
+	buildEpoch            string = "0"
+	startTime             time.Time
+	greaseFactor          float64 = 1.0
+	greaseFactorGaugeProm prometheus.Gauge
+	greaseFactorGaugeOtel metric.Float64ObservableGauge
+	totalAnswers          int64 = 0
+	tracer                trace.Tracer
+	logger                *slog.Logger
 )
 
 // Get environment variable with a default
@@ -80,16 +87,16 @@ func InitTracer(otlphttpEndpoint string, serviceName string) (*sdktrace.TracerPr
 	return tracerProvider, nil
 }
 
-func InitMeter(otlphttpEndpoint string, serviceName string) (*metric.MeterProvider, error) {
+func InitMeter(otlphttpEndpoint string, serviceName string) (*sdkmetric.MeterProvider, error) {
 	ctx := context.Background()
 	metricExporter, err := otlpmetrichttp.New(ctx, otlpmetrichttp.WithEndpoint(otlphttpEndpoint), otlpmetrichttp.WithInsecure())
 	if err != nil {
 		return nil, err
 	}
 
-	meterProvider := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(metricExporter)),
-		metric.WithResource(resource.NewWithAttributes(
+	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+		sdkmetric.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String(serviceName),
 		)),
@@ -99,16 +106,16 @@ func InitMeter(otlphttpEndpoint string, serviceName string) (*metric.MeterProvid
 	return meterProvider, nil
 }
 
-func InitLogger(otlphttpEndpoint string, serviceName string) (*otellog.LoggerProvider, error) {
+func InitLogger(otlphttpEndpoint string, serviceName string) (*sdklog.LoggerProvider, error) {
 	ctx := context.Background()
 	logExporter, err := otlploghttp.New(ctx, otlploghttp.WithEndpoint(otlphttpEndpoint), otlploghttp.WithInsecure())
 	if err != nil {
 		return nil, err
 	}
 
-	logProvider := otellog.NewLoggerProvider(
-		otellog.WithProcessor(otellog.NewBatchProcessor(logExporter)),
-		otellog.WithResource(resource.NewWithAttributes(
+	logProvider := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
+		sdklog.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String(serviceName),
 		)),
@@ -131,15 +138,6 @@ func loggerSpanAttr(ctx context.Context, span trace.Span) slog.Attr {
 		span_attr = slog.String("span_id", span.SpanContext().SpanID().String())
 	}
 	return span_attr
-}
-func updateGreaseFactor() {
-	go func() {
-		for {
-			greaseFactor = float64(totalAnswers) / (time.Since(startTime).Seconds() + 10)
-			greaseFactorGauge.Set(greaseFactor)
-			time.Sleep(1 * time.Second)
-		}
-	}()
 }
 
 func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
@@ -215,16 +213,61 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	return nil, string(responseData)
 }
 
+func initGreaseGauge(appName string) error {
+	meterProvider := otel.GetMeterProvider()
+	meter := meterProvider.Meter(appName)
+
+	// register the OTEL metric
+	var err error
+	greaseFactorGaugeOtel, err = meter.Float64ObservableGauge(
+		"genteelbeacon_greasefactor",
+		metric.WithDescription("The Genteel Beacon's current grease factor"),
+	)
+
+	if err != nil {
+		log.Fatalf("Failed to create metric: %v", err)
+	}
+
+	// register the Prometheus metric
+	greaseFactorGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "genteelbeacon_greasefactor",
+		Help: "The Genteel Beacon's current grease factor",
+	})
+
+	// start a go routine to update the grease factor
+	go func() {
+		for {
+			greaseFactor = float64(totalAnswers) / (time.Since(startTime).Seconds() + 10)
+			greaseFactorGaugeProm.Set(greaseFactor)
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
+	// OTEL sending
+	_, err = meter.RegisterCallback(
+		func(ctx context.Context, observer metric.Observer) error {
+			nodeName, err := os.Hostname()
+			if err != nil {
+				nodeName = "unknown host"
+			}
+			hostName := []attribute.KeyValue{attribute.String("hostname", nodeName)}
+
+			// return the global value
+			observer.ObserveFloat64(greaseFactorGaugeOtel, greaseFactor, metric.WithAttributes(hostName...))
+
+			return nil
+		}, greaseFactorGaugeOtel)
+
+	if err != nil {
+		log.Fatalf("Failed to register callback: %v", err)
+	}
+	return err
+}
+
 func main() {
 	// our names
 	appName := getEnv("APP_NAME", "Genteel Beacon")
 	startTime = time.Now()
-
-	greaseFactorGauge = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "genteelbeacon_greasefactor",
-		Help: "The Genteel Beacon's current grease factor",
-	})
-	updateGreaseFactor()
 
 	app := fiber.New()
 	app.Use(requestid.New())
@@ -244,16 +287,17 @@ func main() {
 		ReadinessEndpoint: "/readyz",
 	}))
 
+	initGreaseGauge(appName)
+	prometheus := fiberprometheus.NewWithDefaultRegistry(appName)
+	prometheus.RegisterAt(app, "/metrics")
+
+	app.Use(prometheus.Middleware)
+
 	app.Use(otelfiber.Middleware())
 
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Genteel Beacon 🚨")
 	})
-
-	prometheus := fiberprometheus.NewWithDefaultRegistry(appName)
-	prometheus.RegisterAt(app, "/metrics")
-
-	app.Use(prometheus.Middleware)
 
 	otlphttpEndpoint, ok := os.LookupEnv("OTLPHTTP_ENDPOINT")
 	if ok {
