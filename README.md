@@ -2,13 +2,15 @@
 
 ## Building
 
-The repository is set up for [Air](https://github.com/air-verse/air) and [Docker](https://hub.docker.com/r/schildwaechter/genteelbeacon) build.
+The repository is set up for [Air](https://github.com/air-verse/air), `go install tool`.
 
 When building manually, provide the build timestamp
 
 ```shell
 go build -ldflags "-X main.buildEpoch=$(date '+%s')" .
 ```
+
+The helper tool, Grumpy Gearsmith, is not built with air, but included in the [Docker](https://hub.docker.com/r/schildwaechter/genteelbeacon) image.
 
 ## Using
 

@@ -11,6 +11,7 @@ metadata:
   namespace: genteelbeacon
   labels:
     app: gildedgateway
+    genteelbeacon: gildedgateway
     schildwaechter: genteelbeacon
 spec:
   replicas: 1
@@ -21,6 +22,8 @@ spec:
     metadata:
       labels:
         app: gildedgateway
+        genteelbeacon: gildedgateway
+        schildwaechter: genteelbeacon
     spec:
       containers:
         - name: genteelbeacon
@@ -85,6 +88,7 @@ metadata:
   namespace: genteelbeacon
   labels:
     app: regencyrelay
+    genteelbeacon: regencyrelay
     schildwaechter: genteelbeacon
 spec:
   replicas: 1
@@ -95,6 +99,7 @@ spec:
     metadata:
       labels:
         app: regencyrelay
+        genteelbeacon: regencyrelay
     spec:
       containers:
         - name: genteelbeacon
@@ -159,6 +164,7 @@ metadata:
   namespace: genteelbeacon
   labels:
     app: elegantendeavors
+    genteelbeacon: elegantendeavors
     schildwaechter: genteelbeacon
 spec:
   replicas: 1
@@ -169,6 +175,7 @@ spec:
     metadata:
       labels:
         app: elegantendeavors
+        genteelbeacon: elegantendeavors
     spec:
       containers:
         - name: genteelbeacon

@@ -1,4 +1,4 @@
 tmp/
 k8s/kustomization.yaml
-k8s/kustomization.yaml.bak
 k8s/helm/*-secret.yaml
+*.bak
