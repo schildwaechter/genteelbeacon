@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 )
 
 var ErrNoNamespace = fmt.Errorf("Namespace not found")
+var nameSpace string
 
 // apparently this is how you get the pod's namespace...?
 func GetNamespace() (string, error) {
@@ -38,8 +40,8 @@ func GetNamespace() (string, error) {
 	return ns, nil
 }
 
-func getBeacons(ns string, clientset *kubernetes.Clientset) ([]string, error) {
-	deployments, err := clientset.AppsV1().Deployments(ns).List(context.TODO(), metav1.ListOptions{LabelSelector: "genteelbeacon"})
+func getBeacons(clientset *kubernetes.Clientset) ([]string, error) {
+	deployments, err := clientset.AppsV1().Deployments(nameSpace).List(context.TODO(), metav1.ListOptions{LabelSelector: "genteelbeacon"})
 	if err != nil {
 		slog.Error("Error getting deployments! " + err.Error())
 		return nil, err
@@ -53,8 +55,8 @@ func getBeacons(ns string, clientset *kubernetes.Clientset) ([]string, error) {
 	return deploymentNames, nil
 }
 
-func calcGearValues(beacon string, ns string, clientset *kubernetes.Clientset) (int64, float64, error) {
-	pods, err := clientset.CoreV1().Pods(ns).List(context.TODO(), metav1.ListOptions{LabelSelector: "genteelbeacon=" + beacon})
+func calcGearValues(beacon string, clientset *kubernetes.Clientset) (int64, float64, error) {
+	pods, err := clientset.CoreV1().Pods(nameSpace).List(context.TODO(), metav1.ListOptions{LabelSelector: "genteelbeacon=" + beacon})
 	if err != nil {
 		slog.Error("Eror getting pods for label genteelbeacon=" + beacon)
 		return 0, 0, err
@@ -103,6 +105,10 @@ func statsServe(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, string(jsonString))
 }
 
+func healthCheck(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "{\"status\":\"healthy\"}")
+}
+
 func gearValueServe(w http.ResponseWriter, r *http.Request) {
 	beacon := r.PathValue("beacon")
 	if beacon == "" {
@@ -112,7 +118,33 @@ func gearValueServe(w http.ResponseWriter, r *http.Request) {
 	if beaconGear.Count == 0 {
 		slog.Warn("Queried non-existent gear: " + beacon)
 	}
-	fmt.Fprint(w, beaconGear.Average)
+
+	data := map[string]interface{}{
+		"kind":       "MetricValueList",
+		"apiVersion": "custom.metrics.k8s.io/v1beta1",
+		"metadata": map[string]interface{}{
+			"selfLink": "/apis/custom.metrics.k8s.io/v1beta1",
+		},
+		"items": []interface{}{map[string]interface{}{
+			"describedObject": map[string]interface{}{
+				"kind":       "Service",
+				"namespace":  nameSpace,
+				"name":       beacon,
+				"apiVersion": "v1beta1",
+			},
+			"metricName": "gearvalue",
+			"timestamp":  fmt.Sprintf(time.Now().Format(time.RFC3339)),
+			"value":      fmt.Sprintf("%d", int64(math.Round(beaconGear.Average*100))),
+		},
+		}}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		slog.Error("could not marshal json: %s\n", err.Error())
+		return
+	}
+
+	fmt.Fprint(w, string(jsonData))
 }
 
 type gearStat struct {
@@ -132,38 +164,39 @@ func setGearStats() {
 		if err != nil {
 			panic(err.Error())
 		}
-		ns, err := GetNamespace()
-		if err != nil {
-			panic(err.Error())
-		}
-		beacons, err := getBeacons(ns, clientset)
+		beacons, err := getBeacons(clientset)
 		if err != nil {
 			slog.Error(err.Error())
 		}
 		for _, element := range beacons {
-			number, average, err := calcGearValues(element, ns, clientset)
+			number, average, err := calcGearValues(element, clientset)
 			if err != nil {
 				slog.Error(err.Error())
 			}
 			gearStats[element] = gearStat{number, average}
 			slog.Debug(fmt.Sprintf("Average for "+element+" is: %f\n", (average)))
 		}
+		gearStats["grumpygearsmith"] = gearStat{0, 17}
 		time.Sleep(5 * time.Second)
 	}
 }
 
 func main() {
 	gearStats = make(map[string]gearStat)
+	ns, err := GetNamespace()
+	if err != nil {
+		panic(err.Error())
+	}
+	nameSpace = ns
 	// run in background
 	go setGearStats()
 
 	router := http.NewServeMux()
 	router.HandleFunc("/stats", statsServe)
-	router.HandleFunc("/gearvalue/{beacon}", gearValueServe)
-	server := http.Server{
-		Addr:    ":8080",
-		Handler: router,
-	}
-	server.ListenAndServe()
+	router.HandleFunc("/apis/custom.metrics.k8s.io/v1beta1", healthCheck)
+	router.HandleFunc("/apis/custom.metrics.k8s.io/v1beta1/namespaces/"+ns+"/services/{beacon}/gearvalue", gearValueServe)
 
+	http.ListenAndServeTLS(":6443", "/cert/tls.crt", "/cert/tls.key", router)
 }
+
+// kubectl get --raw /apis/custom.metrics.k8s.io/v1beta1/namespaces/genteelbeacon/services/gildedgateway/gearvalue

@@ -62,9 +62,13 @@ spec:
       labels:
         app: grumpygearsmith
     spec:
+      volumes:
+        - name: cert-volume
+          secret:
+            secretName: grumpygearsmith
       containers:
         - name: grumpygearsmith
-          image: schildwaechter/genteelbeacon:main
+          image: schildwaechter/genteelbeacon:local-31641
           command: ["/grumpygearsmith"]
           resources:
             requests:
@@ -74,8 +78,12 @@ spec:
               memory: "64Mi"
               cpu: "10m"
           ports:
-            - name: http
-              containerPort: 8080
+            - name: https
+              containerPort: 6443
+          volumeMounts:
+            - name: cert-volume
+              readOnly: true
+              mountPath: /cert
       serviceAccountName: grumpygearsmith
 ---
 apiVersion: v1
@@ -87,6 +95,46 @@ spec:
   selector:
     app: grumpygearsmith
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: http
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: https
+
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.custom.metrics.k8s.io
+spec:
+  insecureSkipTLSVerify: true
+  group: custom.metrics.k8s.io
+  groupPriorityMinimum: 1000
+  versionPriority: 5
+  service:
+    name: grumpygearsmith
+    namespace: genteelbeacon
+  version: v1beta1
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gildedgateway
+  namespace: genteelbeacon
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gildedgateway
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Object
+      object:
+        describedObject:
+          kind: Service
+          name: gildedgateway
+        metric:
+          name: gearvalue
+        target:
+          type: AverageValue
+          averageValue: "30"

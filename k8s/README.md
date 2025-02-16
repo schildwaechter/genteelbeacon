@@ -5,9 +5,14 @@ Suggested to have [Kubernetes Cloud Provider for KIND](https://github.com/kubern
 
 ## Create the cluster
 
+We use a dedicated kind cluster and set up the metrics API
+
 ```shell
 kind create cluster --name genteelbeacon --image kindest/node:v1.31.4
+kubectl apply -k k8s/metrics-server
 ```
+
+On a cloud installation, this is enabled by default.
 
 ## Install a Genteel Beacon setup
 
@@ -67,7 +72,7 @@ patches:
 
 or by changing the ConfigMaps. The file is gitignored for a reason!
 
-To reflect changes in the ConfigMap, use
+To restart everything, use
 
 ```shell
 kubectl rollout restart deployment -n genteelbeacon --selector=schildwaechter=genteelbeacon
@@ -90,4 +95,12 @@ kubectl apply -k k8s/
 ```shell
 kind delete cluster --name genteelbeacon
 docker image list
+```
+
+## Gearsmith
+
+```shell
+openssl req -x509 -newkey rsa:2048 -keyout tls.key -out tls.crt -sha256 -days 365 -nodes -subj "/C=NO/O=Genteel Beacon/CN=grumpygearsmith"
+kubectl create secret tls -n genteelbeacon grumpygearsmith --cert=tls.crt --key=tls.key
+kubectl apply -f k8s/grumpygearsmith.yaml
 ```
