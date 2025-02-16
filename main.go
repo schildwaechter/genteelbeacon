@@ -55,8 +55,11 @@ var (
 	buildEpoch            string = "0"
 	startTime             time.Time
 	greaseFactor          float64 = 1.0
+	inkNeed               float64 = 0.0
 	greaseFactorGaugeProm prometheus.Gauge
+	inkNeedGaugeProm      prometheus.Gauge
 	greaseFactorGaugeOtel metric.Float64ObservableGauge
+	inkNeedGaugeOtel      metric.Float64ObservableGauge
 	totalAnswers          int64 = 0
 	tracer                trace.Tracer
 	logger                *slog.Logger
@@ -170,24 +173,33 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	return nil
 }
 
-func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, requestId string) (string, error) {
+func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, timeString string, useClock bool, requestId string) (string, error) {
 	ctx, span := tracer.Start(ctx, "Scribe Study")
 	defer span.End()
 
-	logger.DebugContext(ctx, "Scribe 🖊️")
+	logger.DebugContext(ctx, "Scribe at work 🖊️")
 
 	nodeName, err := os.Hostname()
 	if err != nil {
 		nodeName = "unknown host"
 	}
 
+	span.AddEvent("Preparing message")
 	scribeErrorChance := rand.Float64()
-	scribeSignature := "\nBuild time: " + buildEpoch + ", »" + appName + "« running on " + nodeName + " 🙋 " + requestId
+	scribeSignature := "Build " + buildEpoch + ", »" + appName + "« running on " + nodeName + " 🙋 " + requestId
+	var scribeMessage string
+	if useClock {
+		scribeMessage = "🕰️ The time is " + timeString + "\n"
+	} else {
+		scribeMessage = "📅 Today is " + timeString + " – that's all we have!\n"
+	}
 
 	if scribeErrorChance < 0.01 { // very rare super long delay
+		span.AddEvent("Pan search")
 		logger.WarnContext(ctx, "Scribe dropped the pen 🔍!!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
 		time.Sleep(3 * time.Second) // uppss...
 	} else if scribeErrorChance > 0.99 { // somestimes it can't wait
+		span.AddEvent("Break time")
 		err := errors.New("Scribe seems to be having a break 🫖")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -196,6 +208,7 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, reque
 
 		return "🕰️ The time is not available at this moment!!" + scribeSignature, fiber.NewError(fiber.StatusTeapot, err.Error())
 	} else if scribeErrorChance > 0.96 { // oh dear (if we haven't tripped before)
+		span.AddEvent("Urgent need")
 		err := errors.New("Scribe seems to be indisposed 💩")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -205,19 +218,19 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, reque
 		return "🕰️ The time is not available at this moment!!" + scribeSignature, fiber.NewError(fiber.StatusServiceUnavailable, err.Error())
 	} else {
 		time.Sleep(time.Duration(rand.IntN(100)+1) * time.Millisecond) // normal artificial span increase
+		span.AddEvent("Message ready")
 	}
 
-	theTime := time.Now().Format("2006-01-02 15:04:05")
-	return "🕰️ The time is " + theTime + scribeSignature, nil
+	return scribeMessage + scribeSignature, nil
 }
 
-func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, backend string) (error, string) {
+func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, clock string) (error, string) {
 	_, span := tracer.Start(ctx, "CourteousCourier")
 	defer span.End()
 
-	logger.DebugContext(ctx, "courier 🐦", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+	logger.DebugContext(ctx, "Courier checking "+clock+" 🐦", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", backend+"/telegram", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", clock+"/timestamp", nil)
 
 	// Inject TraceParent to Context
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
@@ -225,8 +238,8 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	resp, err := client.Do(req)
 	if err != nil {
 		span.RecordError(err)
-		logger.ErrorContext(ctx, "Error calling backend!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
-		return err, "Error calling backend!"
+		logger.ErrorContext(ctx, "Error checking clock!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+		return err, "Error checking clock!"
 	}
 	defer resp.Body.Close()
 
@@ -240,37 +253,43 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	return nil, string(responseData)
 }
 
-func initGreaseGauge(appName string) error {
+func initGenteelGauges(appName string) error {
 	meterProvider := otel.GetMeterProvider()
 	meter := meterProvider.Meter(appName)
 
-	// register the OTEL metric
-	var err error
-	greaseFactorGaugeOtel, err = meter.Float64ObservableGauge(
+	// register the OTEL metrics
+	greaseFactorGaugeOtel, _ = meter.Float64ObservableGauge(
 		"genteelbeacon_greasefactor",
 		metric.WithDescription("The Genteel Beacon's current grease factor"),
 	)
+	inkNeedGaugeOtel, _ = meter.Float64ObservableGauge(
+		"genteelbeacon_inkneed",
+		metric.WithDescription("The Genteel Beacon's current ink need"),
+	)
 
-	if err != nil {
-		log.Fatalf("Failed to create metric: %v", err)
-	}
-
-	// register the Prometheus metric
+	// register the Prometheus metrics
 	greaseFactorGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "genteelbeacon_greasefactor",
+		Name: "genteelbeacon_greasefactor_p",
 		Help: "The Genteel Beacon's current grease factor",
 	})
+	inkNeedGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "genteelbeacon_inkneed_p",
+		Help: "The Genteel Beacon's current ink need",
+	})
 
-	// start a go routine to update the grease factor
+	// start a go routine to update the values
 	go func() {
 		for {
 			greaseFactor = float64(totalAnswers) / (time.Since(startTime).Seconds() + 10)
 			greaseFactorGaugeProm.Set(greaseFactor)
+			inkNeed = float64(totalAnswers) / (2 * (time.Since(startTime).Seconds() + 10))
+			inkNeedGaugeProm.Set(inkNeed)
 			time.Sleep(1 * time.Second)
 		}
 	}()
 
 	// OTEL sending
+	var err error = nil
 	_, err = meter.RegisterCallback(
 		func(ctx context.Context, observer metric.Observer) error {
 			nodeName, err := os.Hostname()
@@ -284,6 +303,23 @@ func initGreaseGauge(appName string) error {
 
 			return nil
 		}, greaseFactorGaugeOtel)
+
+	if err != nil {
+		log.Fatalf("Failed to register callback: %v", err)
+	}
+	_, err = meter.RegisterCallback(
+		func(ctx context.Context, observer metric.Observer) error {
+			nodeName, err := os.Hostname()
+			if err != nil {
+				nodeName = "unknown host"
+			}
+			hostName := []attribute.KeyValue{attribute.String("hostname", nodeName)}
+
+			// return the global value
+			observer.ObserveFloat64(inkNeedGaugeOtel, inkNeed, metric.WithAttributes(hostName...))
+
+			return nil
+		}, inkNeedGaugeOtel)
 
 	if err != nil {
 		log.Fatalf("Failed to register callback: %v", err)
@@ -316,7 +352,7 @@ func main() {
 		ReadinessEndpoint: "/readyz",
 	}))
 
-	initGreaseGauge(appName)
+	initGenteelGauges(appName)
 	prometheus := fiberprometheus.NewWithDefaultRegistry(appName)
 	prometheus.RegisterAt(app, "/metrics")
 
@@ -389,9 +425,8 @@ func main() {
 		gearsmith.RunGearsmith()
 	} else {
 
-		// Define the route for the main path '/telegram'
-		app.Get("/telegram", func(c *fiber.Ctx) error {
-			ctx, span := tracer.Start(c.UserContext(), "Telegram Endpoint")
+		app.Get("/timestamp", func(c *fiber.Ctx) error {
+			ctx, span := tracer.Start(c.UserContext(), "Timestamp Endpoint")
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
@@ -402,28 +437,39 @@ func main() {
 				return greaseErr
 			}
 
-			var backendResponseString string
-			var backendResponseError error = nil
-			backend, useBackend := os.LookupEnv("BACKEND")
+			theTime := time.Now().Format("2006-01-02 15:04:05")
+			return c.SendString(theTime)
+		})
 
-			scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, appName, slogfiber.GetRequestIDFromContext(c.Context()))
+		// Define the route for the main path '/telegram'
+		app.Get("/telegram", func(c *fiber.Ctx) error {
+			ctx, span := tracer.Start(c.UserContext(), "Telegram Endpoint")
+			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
+			defer span.End()
+
+			totalAnswers += 1
+
+			var clockString string
+			var clockResponseError error = nil
+			clock, useClock := os.LookupEnv("GENTEEL_CLOCK")
+
+			if useClock {
+				clockResponseError, clockString = courteousCourier(ctx, tracer, client, clock)
+			} else {
+				logger.DebugContext(ctx, "No clock available")
+				clockString = time.Now().Format("2006-01-02")
+			}
+			if clockResponseError != nil {
+				return clockResponseError
+			}
+
+			scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, appName, clockString, useClock, slogfiber.GetRequestIDFromContext(c.Context()))
 
 			if scribeErr != nil {
 				return scribeErr
 			}
 
-			if useBackend && rand.Float64() < 0.4 {
-				backendResponseError, backendResponseString = courteousCourier(ctx, tracer, client, backend)
-				if backendResponseError == nil {
-					return c.SendString(scribeStudyMessage + " 📫 \n" + backendResponseString)
-				} else {
-					return fiber.NewError(fiber.StatusServiceUnavailable, backendResponseString+": "+scribeStudyMessage+" 🛑")
-				}
-			} else {
-				logger.Debug("No backend defined")
-				return c.SendString(scribeStudyMessage + " 🏁\n")
-			}
-
+			return c.SendString(scribeStudyMessage + " 🏁\n")
 		})
 
 		// Start the server on the specified port and address

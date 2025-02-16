@@ -83,8 +83,8 @@ func calcGearValues(beacon string, clientset *kubernetes.Clientset) (int64, floa
 		var line string
 		for responseScanner.Scan() {
 			line = responseScanner.Text()
-			if strings.HasPrefix(line, "genteelbeacon_greasefactor") {
-				greaseReturn, err := strconv.ParseFloat(strings.TrimSpace(line[len("genteelbeacon_greasefactor"):]), 64)
+			if strings.HasPrefix(line, "genteelbeacon_greasefactor_p") {
+				greaseReturn, err := strconv.ParseFloat(strings.TrimSpace(line[len("genteelbeacon_greasefactor_p"):]), 64)
 				if err != nil {
 					slog.Error("Error parsing prometheus value")
 				}
@@ -179,7 +179,6 @@ func setGearStats() {
 			gearStats[element] = gearStat{number, average}
 			slog.Debug(fmt.Sprintf("Average for "+element+" is: %f\n", (average)))
 		}
-		gearStats["grumpygearsmith"] = gearStat{0, 17}
 		time.Sleep(5 * time.Second)
 	}
 }

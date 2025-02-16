@@ -12,6 +12,7 @@ metadata:
   labels:
     app: gildedgateway
     genteelbeacon: gildedgateway
+    genteelrole: relay
     schildwaechter: genteelbeacon
 spec:
   replicas: 1
@@ -23,6 +24,7 @@ spec:
       labels:
         app: gildedgateway
         genteelbeacon: gildedgateway
+        genteelrole: relay
         schildwaechter: genteelbeacon
     spec:
       containers:
@@ -64,7 +66,7 @@ metadata:
   namespace: genteelbeacon
 data:
   APP_NAME: "Gilded Gateway"
-  BACKEND: "http://regencyrelay:1333"
+  GENTEEL_CLOCK: "http://velvettimepeace:1333"
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1
@@ -84,22 +86,24 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: regencyrelay
+  name: velvettimepeace
   namespace: genteelbeacon
   labels:
-    app: regencyrelay
-    genteelbeacon: regencyrelay
+    app: velvettimepeace
+    genteelbeacon: velvettimepeace
+    genteelrole: clock
     schildwaechter: genteelbeacon
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: regencyrelay
+      app: velvettimepeace
   template:
     metadata:
       labels:
-        app: regencyrelay
-        genteelbeacon: regencyrelay
+        app: velvettimepeace
+        genteelbeacon: velvettimepeace
+        genteelrole: clock
         schildwaechter: genteelbeacon
     spec:
       containers:
@@ -129,7 +133,7 @@ spec:
             periodSeconds: 5
           envFrom:
             - configMapRef:
-                name: regencyrelay
+                name: velvettimepeace
           ports:
             - name: servingport
               containerPort: 1333
@@ -137,97 +141,20 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: regencyrelay
+  name: velvettimepeace
   namespace: genteelbeacon
 data:
-  APP_NAME: "Regency Relay"
-  BACKEND: "http://elegantendeavors:1333"
+  APP_NAME: "Velvet Timepeace"
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: regencyrelay
+  name: velvettimepeace
   namespace: genteelbeacon
 spec:
   selector:
-    app: regencyrelay
-  ports:
-    - protocol: TCP
-      port: 1333
-      targetPort: 1333
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: elegantendeavors
-  namespace: genteelbeacon
-  labels:
-    app: elegantendeavors
-    genteelbeacon: elegantendeavors
-    schildwaechter: genteelbeacon
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: elegantendeavors
-  template:
-    metadata:
-      labels:
-        app: elegantendeavors
-        genteelbeacon: elegantendeavors
-        schildwaechter: genteelbeacon
-    spec:
-      containers:
-        - name: genteelbeacon
-          image: schildwaechter/genteelbeacon:main
-          imagePullPolicy: Always
-          resources:
-            requests:
-              memory: "64Mi"
-              cpu: "10m"
-            limits:
-              memory: "64Mi"
-              cpu: "10m"
-          livenessProbe:
-            httpGet:
-              path: /livez
-              port: servingport
-            failureThreshold: 3
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: servingport
-            failureThreshold: 3
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          envFrom:
-            - configMapRef:
-                name: elegantendeavors
-          ports:
-            - name: servingport
-              containerPort: 1333
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: elegantendeavors
-  namespace: genteelbeacon
-data:
-  APP_NAME: "Elegant Endeavors, Esq."
-  OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: elegantendeavors
-  namespace: genteelbeacon
-spec:
-  selector:
-    app: elegantendeavors
+    app: velvettimepeace
   ports:
     - protocol: TCP
       port: 1333
