@@ -67,9 +67,11 @@ spec:
           secret:
             secretName: grumpygearsmith
       containers:
-        - name: grumpygearsmith
-          image: schildwaechter/genteelbeacon:local-31641
-          command: ["/grumpygearsmith"]
+        - name: genteelbeacon
+          image: schildwaechter/genteelbeacon:main
+          env:
+            - name: GENTEEL_ROLE
+              value: "gearsmith"
           resources:
             requests:
               memory: "64Mi"

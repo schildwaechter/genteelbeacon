@@ -100,6 +100,7 @@ spec:
       labels:
         app: regencyrelay
         genteelbeacon: regencyrelay
+        schildwaechter: genteelbeacon
     spec:
       containers:
         - name: genteelbeacon
@@ -176,6 +177,7 @@ spec:
       labels:
         app: elegantendeavors
         genteelbeacon: elegantendeavors
+        schildwaechter: genteelbeacon
     spec:
       containers:
         - name: genteelbeacon

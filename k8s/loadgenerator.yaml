@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgenerator
+  labels:
+    app: loadgenerator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgenerator
+  template:
+    metadata:
+      name: loadgenerator
+      labels:
+        app: loadgenerator
+    spec:
+      containers:
+        - name: loadgenerator
+          image: schildwaechter/k8sdebugger:main
+          imagePullPolicy: Always
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "10m"
+          command: ["/bin/bash", "-c", "--"]
+          args:
+            [
+              "while true; do curl -vs http://gildedgateway.genteelbeacon:1333/telegram; done;",
+            ]

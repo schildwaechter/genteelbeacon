@@ -68,6 +68,7 @@ patches:
             containers:
               - name: genteelbeacon
                 image: schildwaechter/genteelbeacon:main
+                imagePullPolicy: Never
 ```
 
 or by changing the ConfigMaps. The file is gitignored for a reason!

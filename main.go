@@ -47,6 +47,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+
+	"genteelbeacon/gearsmith"
 )
 
 var (
@@ -290,8 +292,10 @@ func initGreaseGauge(appName string) error {
 }
 
 func main() {
-	// our names
+	// our name and role
 	appName := getEnv("APP_NAME", "Genteel Beacon")
+	genteelRole := getEnv("GENTEEL_ROLE", "Default")
+
 	startTime = time.Now()
 
 	app := fiber.New()
@@ -381,45 +385,50 @@ func main() {
 
 	tracer = otel.Tracer(appName)
 
-	// Define the route for the main path '/telegram'
-	app.Get("/telegram", func(c *fiber.Ctx) error {
-		ctx, span := tracer.Start(c.UserContext(), "Telegram Endpoint")
-		span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
-		defer span.End()
+	if genteelRole == "gearsmith" {
+		gearsmith.RunGearsmith()
+	} else {
 
-		totalAnswers += 1
-		greaseErr := greaseGrate(ctx, tracer)
+		// Define the route for the main path '/telegram'
+		app.Get("/telegram", func(c *fiber.Ctx) error {
+			ctx, span := tracer.Start(c.UserContext(), "Telegram Endpoint")
+			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
+			defer span.End()
 
-		if greaseErr != nil {
-			return greaseErr
-		}
+			totalAnswers += 1
+			greaseErr := greaseGrate(ctx, tracer)
 
-		var backendResponseString string
-		var backendResponseError error = nil
-		backend, useBackend := os.LookupEnv("BACKEND")
-
-		scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, appName, slogfiber.GetRequestIDFromContext(c.Context()))
-
-		if scribeErr != nil {
-			return scribeErr
-		}
-
-		if useBackend && rand.Float64() < 0.4 {
-			backendResponseError, backendResponseString = courteousCourier(ctx, tracer, client, backend)
-			if backendResponseError == nil {
-				return c.SendString(scribeStudyMessage + " 📫 \n" + backendResponseString)
-			} else {
-				return fiber.NewError(fiber.StatusServiceUnavailable, backendResponseString+": "+scribeStudyMessage+" 🛑")
+			if greaseErr != nil {
+				return greaseErr
 			}
-		} else {
-			logger.Debug("No backend defined")
-			return c.SendString(scribeStudyMessage + " 🏁\n")
-		}
 
-	})
+			var backendResponseString string
+			var backendResponseError error = nil
+			backend, useBackend := os.LookupEnv("BACKEND")
 
-	// Start the server on the specified port and address
-	appPort := getEnv("APP_PORT", "1333")
-	appAddr := getEnv("APP_ADDR", "0.0.0.0")
-	log.Fatal(app.Listen(appAddr + ":" + appPort))
+			scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, appName, slogfiber.GetRequestIDFromContext(c.Context()))
+
+			if scribeErr != nil {
+				return scribeErr
+			}
+
+			if useBackend && rand.Float64() < 0.4 {
+				backendResponseError, backendResponseString = courteousCourier(ctx, tracer, client, backend)
+				if backendResponseError == nil {
+					return c.SendString(scribeStudyMessage + " 📫 \n" + backendResponseString)
+				} else {
+					return fiber.NewError(fiber.StatusServiceUnavailable, backendResponseString+": "+scribeStudyMessage+" 🛑")
+				}
+			} else {
+				logger.Debug("No backend defined")
+				return c.SendString(scribeStudyMessage + " 🏁\n")
+			}
+
+		})
+
+		// Start the server on the specified port and address
+		appPort := getEnv("APP_PORT", "1333")
+		appAddr := getEnv("APP_ADDR", "0.0.0.0")
+		log.Fatal(app.Listen(appAddr + ":" + appPort))
+	}
 }

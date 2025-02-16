@@ -3,7 +3,7 @@
 //
 // SPDX-Identifier: Apache-2.0
 
-package main
+package gearsmith
 
 import (
 	"bufio"
@@ -52,6 +52,8 @@ func getBeacons(clientset *kubernetes.Clientset) ([]string, error) {
 		deploymentNames = append(deploymentNames, deploy.Name)
 	}
 
+	slog.Debug(fmt.Sprintf("Deployments: %+v", deploymentNames))
+
 	return deploymentNames, nil
 }
 
@@ -65,12 +67,13 @@ func calcGearValues(beacon string, clientset *kubernetes.Clientset) (int64, floa
 	var number int64 = 0
 	var sum float64 = 0
 	for _, pod := range pods.Items {
+		slog.Debug("Querying " + pod.Name + " at IP " + pod.Status.PodIP)
 		req, err := http.NewRequest("GET", "http://"+pod.Status.PodIP+":1333/metrics", nil)
-		client := &http.Client{Timeout: 1 * time.Second}
+		client := &http.Client{Timeout: 3 * time.Second}
 
 		resp, err := client.Do(req)
 		if err != nil {
-			slog.Warn("Can't reach pod " + pod.Name)
+			slog.Warn("Can't reach pod " + pod.Name + ". Error: " + err.Error())
 			continue // we just ignore this pod
 		}
 
@@ -181,13 +184,14 @@ func setGearStats() {
 	}
 }
 
-func main() {
+func RunGearsmith() {
 	gearStats = make(map[string]gearStat)
 	ns, err := GetNamespace()
 	if err != nil {
 		panic(err.Error())
 	}
 	nameSpace = ns
+	slog.Debug("Running in namespace: " + nameSpace)
 	// run in background
 	go setGearStats()
 
