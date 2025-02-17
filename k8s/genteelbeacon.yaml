@@ -7,23 +7,23 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gildedgateway
+  name: gaslightparlour
   namespace: genteelbeacon
   labels:
-    app: gildedgateway
-    genteelbeacon: gildedgateway
+    app: gaslightparlour
+    genteelbeacon: gaslightparlour
     genteelrole: relay
     schildwaechter: genteelbeacon
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: gildedgateway
+      app: gaslightparlour
   template:
     metadata:
       labels:
-        app: gildedgateway
-        genteelbeacon: gildedgateway
+        app: gaslightparlour
+        genteelbeacon: gaslightparlour
         genteelrole: relay
         schildwaechter: genteelbeacon
     spec:
@@ -54,7 +54,7 @@ spec:
             periodSeconds: 5
           envFrom:
             - configMapRef:
-                name: gildedgateway
+                name: gaslightparlour
           ports:
             - name: servingport
               containerPort: 1333
@@ -62,21 +62,21 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: gildedgateway
+  name: gaslightparlour
   namespace: genteelbeacon
 data:
-  APP_NAME: "Gilded Gateway"
+  APP_NAME: "Gaslight Parlour"
   GENTEEL_CLOCK: "http://velvettimepeace:1333"
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: gildedgateway
+  name: gaslightparlour
   namespace: genteelbeacon
 spec:
   selector:
-    app: gildedgateway
+    app: gaslightparlour
   ports:
     - protocol: TCP
       port: 1333

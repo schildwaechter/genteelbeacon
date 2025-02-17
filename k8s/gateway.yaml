@@ -1,0 +1,45 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gildedgateway
+  namespace: genteelbeacon
+spec:
+  gatewayClassName: nginx
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gildedgateway
+  namespace: genteelbeacon
+spec:
+  parentRefs:
+    - name: gildedgateway
+  hostnames:
+    - "genteelbeacon.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: gaslightparlour
+          port: 1333
+---
+apiVersion: gateway.nginx.org/v1alpha2
+kind: ObservabilityPolicy
+metadata:
+  name: gildedgateway
+  namespace: genteelbeacon
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: gildedgateway
+  tracing:
+    context: propagate
+    strategy: ratio
+    ratio: 100

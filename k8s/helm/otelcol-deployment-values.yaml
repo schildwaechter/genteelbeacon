@@ -41,21 +41,21 @@ config:
       trace_statements:
         - context: span
           statements:
-            - set(attributes["schildwaechter"], "genteelbeacon")
+            - set(span.attributes["schildwaechter"], "genteelbeacon")
         - context: spanevent
           statements:
-            - set(attributes["schildwaechter"], "genteelbeacon")
+            - set(spanevent.attributes["schildwaechter"], "genteelbeacon")
       metric_statements:
         - context: datapoint
           statements:
-            - set(attributes["schildwaechter"], "genteelbeacon")
+            - set(datapoint.attributes["schildwaechter"], "genteelbeacon")
       log_statements:
         - context: scope
           statements:
-            - set(attributes["schildwaechter"], "genteelbeacon")
+            - set(scope.attributes["schildwaechter"], "genteelbeacon")
         - context: log
           statements:
-            - set(attributes["schildwaechter"], "genteelbeacon")
+            - set(log.attributes["schildwaechter"], "genteelbeacon")
 
   exporters:
     otlphttp:

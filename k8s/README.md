@@ -1,7 +1,6 @@
 # Kubernetes setup
 
 This is a minimal setup for testing locally with [kind](https://kind.sigs.k8s.io/)
-Suggested to have [Kubernetes Cloud Provider for KIND](https://github.com/kubernetes-sigs/cloud-provider-kind?tab=readme-ov-file#install) (at least on Linux)
 
 ## Create the cluster
 
@@ -14,11 +13,33 @@ kubectl apply -k k8s/metrics-server
 
 On a cloud installation, this is enabled by default.
 
+## Gateway Fabric
+
+This assume you have [Kubernetes Cloud Provider for KIND](https://github.com/kubernetes-sigs/cloud-provider-kind?tab=readme-ov-file#install).
+
+Install the NGINX Gateway Fabric
+
+```shell
+kubectl kustomize "https://github.com/nginx/nginx-gateway-fabric/config/crd/gateway-api/standard?ref=v1.6.1" | kubectl apply -f -
+helm upgrade --install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric --create-namespace -n nginx-gateway -f k8s/helm/nginx-gateway-fabric-values.yaml
+kubectl wait --timeout=5m -n nginx-gateway deployment/ngf-nginx-gateway-fabric --for=condition=Available
+LBIP=$(kubectl get svc/ngf-nginx-gateway-fabric -n nginx-gateway -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+kubectl apply -f k8s/gateway.yaml
+```
+
 ## Install a Genteel Beacon setup
 
 ```shell
-kubectl apply -f genteelbeacon.yaml
+kubectl apply -f k8s/genteelbeacon.yaml
 ```
+
+You can try
+
+```shell
+curl http://genteelbeacon.local/telegram --resolve genteelbeacon.local:80:${LBIP}
+```
+
+Alternatively, add DNS to you `/etc/hosts` with the output from `echo "${LBIP} genteelbeacon.local"`.
 
 ## Install open telemetry collectors
 
@@ -31,8 +52,7 @@ helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm
 Add your endpoint and credentials in a `-secret` file to replace the `PLACEHOLDER`s in the values file.
 
 ```shell
-kubectl create ns otel
-helm upgrade --install -n otel otelcol open-telemetry/opentelemetry-collector -f helm/otelcol-deployment-values.yaml -f helm/otelcol-deployment-values-secret.yaml
+helm upgrade --install otelcol oci://ghcr.io/open-telemetry/opentelemetry-helm-charts/opentelemetry-collector --create-namespace -n otel -f k8s/helm/otelcol-deployment-values.yaml -f k8s/helm/otelcol-deployment-values-secret.yaml
 ```
 
 ## Customize with Kustomize

@@ -1,0 +1,5 @@
+nginx:
+  config:
+    telemetry:
+      exporter:
+        endpoint: otelcol-opentelemetry-collector.otel.svc:4317
