@@ -120,13 +120,13 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: gildedgateway
+  name: gaslightparlour
   namespace: genteelbeacon
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: gildedgateway
+    name: gaslightparlour
   minReplicas: 1
   maxReplicas: 10
   metrics:
@@ -134,9 +134,33 @@ spec:
       object:
         describedObject:
           kind: Service
-          name: gildedgateway
+          name: gaslightparlour
+        metric:
+          name: inkvalue
+        target:
+          type: AverageValue
+          averageValue: "30"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: velvettimepiece
+  namespace: genteelbeacon
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: velvettimepiece
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Object
+      object:
+        describedObject:
+          kind: Service
+          name: velvettimepiece
         metric:
           name: gearvalue
         target:
           type: AverageValue
-          averageValue: "30"
+          averageValue: "50"

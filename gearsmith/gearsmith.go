@@ -9,7 +9,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -57,15 +56,17 @@ func getBeacons(clientset *kubernetes.Clientset) ([]string, error) {
 	return deploymentNames, nil
 }
 
-func calcGearValues(beacon string, clientset *kubernetes.Clientset) (int64, float64, error) {
+func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64, int64, float64, error) {
 	pods, err := clientset.CoreV1().Pods(nameSpace).List(context.TODO(), metav1.ListOptions{LabelSelector: "genteelbeacon=" + beacon})
 	if err != nil {
 		slog.Error("Eror getting pods for label genteelbeacon=" + beacon)
-		return 0, 0, err
+		return 0, 0, 0, 0, err
 	}
 
-	var number int64 = 0
-	var sum float64 = 0
+	var gearNumber int64 = 0
+	var inkNumber int64 = 0
+	var gearSum float64 = 0
+	var inkSum float64 = 0
 	for _, pod := range pods.Items {
 		slog.Debug("Querying " + pod.Name + " at IP " + pod.Status.PodIP)
 		req, err := http.NewRequest("GET", "http://"+pod.Status.PodIP+":1333/metrics", nil)
@@ -78,7 +79,8 @@ func calcGearValues(beacon string, clientset *kubernetes.Clientset) (int64, floa
 		}
 
 		defer resp.Body.Close()
-		var greaseVal float64
+		var greaseVal float64 = 0
+		var inkVal float64 = 0
 		responseScanner := bufio.NewScanner(resp.Body)
 		var line string
 		for responseScanner.Scan() {
@@ -89,18 +91,33 @@ func calcGearValues(beacon string, clientset *kubernetes.Clientset) (int64, floa
 					slog.Error("Error parsing prometheus value")
 				}
 				greaseVal = greaseReturn
+				gearNumber += 1
+				gearSum += greaseVal
+			}
+			if strings.HasPrefix(line, "genteelbeacon_inkneed_p") {
+				inkReturn, err := strconv.ParseFloat(strings.TrimSpace(line[len("genteelbeacon_inkneed_p"):]), 64)
+				if err != nil {
+					slog.Error("Error parsing prometheus value")
+				}
+				inkVal = inkReturn
+				inkNumber += 1
+				inkSum += inkVal
 			}
 		}
-		slog.Debug(fmt.Sprintf("GREASE for "+pod.Name+" is: %f\n", (greaseVal)))
-		number += 1
-		sum += greaseVal
-
+		slog.Debug(fmt.Sprintf("Grease for "+pod.Name+" is %f\n", (greaseVal)) + fmt.Sprintf("Ink for "+pod.Name+" is %f\n", (inkVal)))
 	}
 
-	if number == 0 {
-		return 0, 0, errors.New("No relevant pods!")
+	var gearAverage float64 = 0
+	var inkAverage float64 = 0
+
+	if gearNumber != 0 {
+		gearAverage = gearSum / float64(gearNumber)
 	}
-	return number, sum / float64(number), nil
+	if inkNumber != 0 {
+		inkAverage = inkSum / float64(inkNumber)
+	}
+
+	return gearNumber, gearAverage, inkNumber, inkAverage, nil
 }
 
 func statsServe(w http.ResponseWriter, r *http.Request) {
@@ -150,14 +167,57 @@ func gearValueServe(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, string(jsonData))
 }
 
+func inkValueServe(w http.ResponseWriter, r *http.Request) {
+	beacon := r.PathValue("beacon")
+	if beacon == "" {
+		slog.Warn("No beacon in query!")
+	}
+	beaconInk := inkStats[beacon]
+	if beaconInk.Count == 0 {
+		slog.Warn("Queried non-existent ink: " + beacon)
+	}
+
+	data := map[string]interface{}{
+		"kind":       "MetricValueList",
+		"apiVersion": "custom.metrics.k8s.io/v1beta1",
+		"metadata": map[string]interface{}{
+			"selfLink": "/apis/custom.metrics.k8s.io/v1beta1",
+		},
+		"items": []interface{}{map[string]interface{}{
+			"describedObject": map[string]interface{}{
+				"kind":       "Service",
+				"namespace":  nameSpace,
+				"name":       beacon,
+				"apiVersion": "v1beta1",
+			},
+			"metricName": "inkvalue",
+			"timestamp":  fmt.Sprintf(time.Now().Format(time.RFC3339)),
+			"value":      fmt.Sprintf("%d", int64(math.Round(beaconInk.Average*100))),
+		},
+		}}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		slog.Error("could not marshal json: %s\n", err.Error())
+		return
+	}
+
+	fmt.Fprint(w, string(jsonData))
+}
+
 type gearStat struct {
+	Count   int64
+	Average float64
+}
+type inkStat struct {
 	Count   int64
 	Average float64
 }
 
 var gearStats map[string]gearStat
+var inkStats map[string]inkStat
 
-func setGearStats() {
+func setStats() {
 	for {
 		config, err := rest.InClusterConfig()
 		if err != nil {
@@ -172,12 +232,14 @@ func setGearStats() {
 			slog.Error(err.Error())
 		}
 		for _, element := range beacons {
-			number, average, err := calcGearValues(element, clientset)
+			gearNumber, gearAverage, inkNumber, inkAverage, err := calcValues(element, clientset)
 			if err != nil {
 				slog.Error(err.Error())
 			}
-			gearStats[element] = gearStat{number, average}
-			slog.Debug(fmt.Sprintf("Average for "+element+" is: %f\n", (average)))
+			gearStats[element] = gearStat{gearNumber, gearAverage}
+			inkStats[element] = inkStat{inkNumber, inkAverage}
+			slog.Debug(fmt.Sprintf("Gear average for "+element+" is: %f\n", (gearAverage)))
+			slog.Debug(fmt.Sprintf("Ink average for "+element+" is: %f\n", (inkAverage)))
 		}
 		time.Sleep(5 * time.Second)
 	}
@@ -185,6 +247,8 @@ func setGearStats() {
 
 func RunGearsmith() {
 	gearStats = make(map[string]gearStat)
+	inkStats = make(map[string]inkStat)
+
 	ns, err := GetNamespace()
 	if err != nil {
 		panic(err.Error())
@@ -192,14 +256,16 @@ func RunGearsmith() {
 	nameSpace = ns
 	slog.Debug("Running in namespace: " + nameSpace)
 	// run in background
-	go setGearStats()
+	go setStats()
 
 	router := http.NewServeMux()
 	router.HandleFunc("/stats", statsServe)
 	router.HandleFunc("/apis/custom.metrics.k8s.io/v1beta1", healthCheck)
 	router.HandleFunc("/apis/custom.metrics.k8s.io/v1beta1/namespaces/"+ns+"/services/{beacon}/gearvalue", gearValueServe)
+	router.HandleFunc("/apis/custom.metrics.k8s.io/v1beta1/namespaces/"+ns+"/services/{beacon}/inkvalue", inkValueServe)
 
 	http.ListenAndServeTLS(":6443", "/cert/tls.crt", "/cert/tls.key", router)
 }
 
-// kubectl get --raw /apis/custom.metrics.k8s.io/v1beta1/namespaces/genteelbeacon/services/gildedgateway/gearvalue
+// kubectl get --raw /apis/custom.metrics.k8s.io/v1beta1/namespaces/genteelbeacon/services/velvettimepiece/gearvalue
+// kubectl get --raw /apis/custom.metrics.k8s.io/v1beta1/namespaces/genteelbeacon/services/gaslightparlour/inkvalue

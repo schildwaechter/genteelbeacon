@@ -29,5 +29,5 @@ spec:
           command: ["/bin/bash", "-c", "--"]
           args:
             [
-              "while true; do curl -vs http://gildedgateway.genteelbeacon:1333/telegram; done;",
+              "while true; do curl -vs http://genteelbeacon.local/telegram; done;",
             ]

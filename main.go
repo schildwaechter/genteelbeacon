@@ -60,7 +60,8 @@ var (
 	inkNeedGaugeProm      prometheus.Gauge
 	greaseFactorGaugeOtel metric.Float64ObservableGauge
 	inkNeedGaugeOtel      metric.Float64ObservableGauge
-	totalAnswers          int64 = 0
+	totalGearAnswers      int64 = 0
+	totalInkAnswers       int64 = 0
 	tracer                trace.Tracer
 	logger                *slog.Logger
 )
@@ -217,7 +218,7 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, timeS
 
 		return "🕰️ The time is not available at this moment!!" + scribeSignature, fiber.NewError(fiber.StatusServiceUnavailable, err.Error())
 	} else {
-		time.Sleep(time.Duration(rand.IntN(100)+1) * time.Millisecond) // normal artificial span increase
+		time.Sleep(time.Duration(rand.IntN(70)+1) * time.Millisecond) // normal artificial span increase
 		span.AddEvent("Message ready")
 	}
 
@@ -280,9 +281,9 @@ func initGenteelGauges(appName string) error {
 	// start a go routine to update the values
 	go func() {
 		for {
-			greaseFactor = float64(totalAnswers) / (time.Since(startTime).Seconds() + 10)
+			greaseFactor = float64(totalGearAnswers) / (2 * (time.Since(startTime).Seconds() + 10))
 			greaseFactorGaugeProm.Set(greaseFactor)
-			inkNeed = float64(totalAnswers) / (2 * (time.Since(startTime).Seconds() + 10))
+			inkNeed = float64(totalInkAnswers) / (time.Since(startTime).Seconds() + 10)
 			inkNeedGaugeProm.Set(inkNeed)
 			time.Sleep(1 * time.Second)
 		}
@@ -430,7 +431,7 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
-			totalAnswers += 1
+			totalGearAnswers += 1
 			greaseErr := greaseGrate(ctx, tracer)
 
 			if greaseErr != nil {
@@ -447,7 +448,7 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
-			totalAnswers += 1
+			totalInkAnswers += 1
 
 			var clockString string
 			var clockResponseError error = nil

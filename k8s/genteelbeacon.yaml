@@ -66,7 +66,7 @@ metadata:
   namespace: genteelbeacon
 data:
   APP_NAME: "Gaslight Parlour"
-  GENTEEL_CLOCK: "http://velvettimepeace:1333"
+  GENTEEL_CLOCK: "http://velvettimepiece:1333"
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1
@@ -86,23 +86,23 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: velvettimepeace
+  name: velvettimepiece
   namespace: genteelbeacon
   labels:
-    app: velvettimepeace
-    genteelbeacon: velvettimepeace
+    app: velvettimepiece
+    genteelbeacon: velvettimepiece
     genteelrole: clock
     schildwaechter: genteelbeacon
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: velvettimepeace
+      app: velvettimepiece
   template:
     metadata:
       labels:
-        app: velvettimepeace
-        genteelbeacon: velvettimepeace
+        app: velvettimepiece
+        genteelbeacon: velvettimepiece
         genteelrole: clock
         schildwaechter: genteelbeacon
     spec:
@@ -133,7 +133,7 @@ spec:
             periodSeconds: 5
           envFrom:
             - configMapRef:
-                name: velvettimepeace
+                name: velvettimepiece
           ports:
             - name: servingport
               containerPort: 1333
@@ -141,20 +141,20 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: velvettimepeace
+  name: velvettimepiece
   namespace: genteelbeacon
 data:
-  APP_NAME: "Velvet Timepeace"
+  APP_NAME: "Velvet timepiece"
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: velvettimepeace
+  name: velvettimepiece
   namespace: genteelbeacon
 spec:
   selector:
-    app: velvettimepeace
+    app: velvettimepiece
   ports:
     - protocol: TCP
       port: 1333
