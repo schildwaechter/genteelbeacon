@@ -7,7 +7,7 @@ This is a minimal setup for testing locally with [kind](https://kind.sigs.k8s.io
 We use a dedicated kind cluster and set up the metrics API
 
 ```shell
-kind create cluster --name genteelbeacon --image kindest/node:v1.31.4
+kind create cluster --name genteelbeacon --image kindest/node:v1.32.2
 kubectl apply -k k8s/metrics-server
 ```
 
@@ -66,16 +66,6 @@ resources:
   - genteelbeacon.yaml
 patches:
   - target:
-      kind: Service
-      name: gildedgateway
-    patch: |
-      apiVersion: v1
-      kind: Service
-      metadata:
-        name: gildedgateway
-      spec:
-        type: LoadBalancer
-  - target:
       kind: Deployment
     patch: |
       apiVersion: apps/v1
@@ -115,7 +105,10 @@ kubectl apply -k k8s/
 
 ```shell
 kind delete cluster --name genteelbeacon
+docker container list
 docker image list
+docker container prune
+docker image prune -a
 ```
 
 ## Gearsmith
