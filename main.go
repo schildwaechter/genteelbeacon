@@ -47,8 +47,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
-
-	"genteelbeacon/gearsmith"
 )
 
 var (
@@ -75,7 +73,7 @@ func getEnv(name string, defaultValue string) string {
 	return defaultValue
 }
 
-func initTracer(otlphttpEndpoint string, serviceName string) (*sdktrace.TracerProvider, error) {
+func initTracer(otlphttpEndpoint string, commonAttribs []attribute.KeyValue) (*sdktrace.TracerProvider, error) {
 	ctx := context.Background()
 	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(otlphttpEndpoint), otlptracehttp.WithInsecure())
 	if err != nil {
@@ -87,14 +85,15 @@ func initTracer(otlphttpEndpoint string, serviceName string) (*sdktrace.TracerPr
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(serviceName))),
+			commonAttribs...,
+		)),
 	)
 	otel.SetTracerProvider(tracerProvider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	return tracerProvider, nil
 }
 
-func initMeter(otlphttpEndpoint string, serviceName string) (*sdkmetric.MeterProvider, error) {
+func initMeter(otlphttpEndpoint string, commonAttribs []attribute.KeyValue) (*sdkmetric.MeterProvider, error) {
 	ctx := context.Background()
 	metricExporter, err := otlpmetrichttp.New(ctx, otlpmetrichttp.WithEndpoint(otlphttpEndpoint), otlpmetrichttp.WithInsecure())
 	if err != nil {
@@ -105,7 +104,7 @@ func initMeter(otlphttpEndpoint string, serviceName string) (*sdkmetric.MeterPro
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
 		sdkmetric.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(serviceName),
+			commonAttribs...,
 		)),
 	)
 	otel.SetMeterProvider(meterProvider)
@@ -113,7 +112,7 @@ func initMeter(otlphttpEndpoint string, serviceName string) (*sdkmetric.MeterPro
 	return meterProvider, nil
 }
 
-func initLogger(otlphttpEndpoint string, serviceName string) (*sdklog.LoggerProvider, error) {
+func initLogger(otlphttpEndpoint string, commonAttribs []attribute.KeyValue) (*sdklog.LoggerProvider, error) {
 	ctx := context.Background()
 	logExporter, err := otlploghttp.New(ctx, otlploghttp.WithEndpoint(otlphttpEndpoint), otlploghttp.WithInsecure())
 	if err != nil {
@@ -124,7 +123,7 @@ func initLogger(otlphttpEndpoint string, serviceName string) (*sdklog.LoggerProv
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
 		sdklog.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(serviceName),
+			commonAttribs...,
 		)),
 	)
 	global.SetLoggerProvider(logProvider)
@@ -254,7 +253,7 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	return nil, string(responseData)
 }
 
-func initGenteelGauges(appName string) error {
+func initGenteelGauges(appName string, commonAttribs []attribute.KeyValue) error {
 	meterProvider := otel.GetMeterProvider()
 	meter := meterProvider.Meter(appName)
 
@@ -293,15 +292,8 @@ func initGenteelGauges(appName string) error {
 	var err error = nil
 	_, err = meter.RegisterCallback(
 		func(ctx context.Context, observer metric.Observer) error {
-			nodeName, err := os.Hostname()
-			if err != nil {
-				nodeName = "unknown host"
-			}
-			hostName := []attribute.KeyValue{attribute.String("hostname", nodeName)}
-
 			// return the global value
-			observer.ObserveFloat64(greaseFactorGaugeOtel, greaseFactor, metric.WithAttributes(hostName...))
-
+			observer.ObserveFloat64(greaseFactorGaugeOtel, greaseFactor, metric.WithAttributes(commonAttribs...))
 			return nil
 		}, greaseFactorGaugeOtel)
 
@@ -310,15 +302,8 @@ func initGenteelGauges(appName string) error {
 	}
 	_, err = meter.RegisterCallback(
 		func(ctx context.Context, observer metric.Observer) error {
-			nodeName, err := os.Hostname()
-			if err != nil {
-				nodeName = "unknown host"
-			}
-			hostName := []attribute.KeyValue{attribute.String("hostname", nodeName)}
-
 			// return the global value
-			observer.ObserveFloat64(inkNeedGaugeOtel, inkNeed, metric.WithAttributes(hostName...))
-
+			observer.ObserveFloat64(inkNeedGaugeOtel, inkNeed, metric.WithAttributes(commonAttribs...))
 			return nil
 		}, inkNeedGaugeOtel)
 
@@ -330,9 +315,12 @@ func initGenteelGauges(appName string) error {
 
 func main() {
 	// our name and role
-	appName := getEnv("APP_NAME", "Genteel Beacon")
+	appName := getEnv("GENTEEL_NAME", "Genteel Beacon")
 	genteelRole := getEnv("GENTEEL_ROLE", "Default")
-
+	nodeName, err := os.Hostname()
+	if err != nil {
+		nodeName = "unknown host"
+	}
 	startTime = time.Now()
 
 	app := fiber.New()
@@ -353,7 +341,9 @@ func main() {
 		ReadinessEndpoint: "/readyz",
 	}))
 
-	initGenteelGauges(appName)
+	commonAttribs := []attribute.KeyValue{semconv.ServiceNameKey.String(appName), attribute.String("hostname", nodeName), attribute.String("genteelrole", genteelRole)}
+
+	initGenteelGauges(appName, commonAttribs)
 	prometheus := fiberprometheus.NewWithDefaultRegistry(appName)
 	prometheus.RegisterAt(app, "/metrics")
 
@@ -367,21 +357,21 @@ func main() {
 
 	otlphttpEndpoint, ok := os.LookupEnv("OTLPHTTP_ENDPOINT")
 	if ok {
-		tp, err := initTracer(otlphttpEndpoint, appName)
+		tp, err := initTracer(otlphttpEndpoint, commonAttribs)
 		if err != nil {
 			slog.Error("Can't send traces")
 		}
 		defer func() {
 			_ = tp.Shutdown(context.Background())
 		}()
-		mp, err := initMeter(otlphttpEndpoint, appName)
+		mp, err := initMeter(otlphttpEndpoint, commonAttribs)
 		if err != nil {
 			log.Fatal("Can't send metrics")
 		}
 		defer func() {
 			_ = mp.Shutdown(context.Background())
 		}()
-		lp, err := initLogger(otlphttpEndpoint, appName)
+		lp, err := initLogger(otlphttpEndpoint, commonAttribs)
 		if err != nil {
 			log.Fatal("Can't send logs")
 		}
@@ -423,7 +413,7 @@ func main() {
 	tracer = otel.Tracer(appName)
 
 	if genteelRole == "gearsmith" {
-		gearsmith.RunGearsmith()
+		RunGearsmith()
 	} else {
 
 		app.Get("/timestamp", func(c *fiber.Ctx) error {
@@ -431,6 +421,9 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
+			if genteelRole != "clock" && genteelRole != "schildwaechter" {
+				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
+			}
 			totalGearAnswers += 1
 			greaseErr := greaseGrate(ctx, tracer)
 
@@ -449,6 +442,10 @@ func main() {
 			defer span.End()
 
 			totalInkAnswers += 1
+
+			if genteelRole != "telegraphist" && genteelRole != "schildwaechter" {
+				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
+			}
 
 			var clockString string
 			var clockResponseError error = nil

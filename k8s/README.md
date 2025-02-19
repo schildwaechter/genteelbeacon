@@ -45,10 +45,6 @@ Alternatively, add DNS to you `/etc/hosts` with the output from `echo "${LBIP} g
 
 This assumes a deployment for forwarding data to a remote endpoint secured via basic_auth (such as Grafana Cloud).
 
-```shell
-helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-```
-
 Add your endpoint and credentials in a `-secret` file to replace the `PLACEHOLDER`s in the values file.
 
 ```shell

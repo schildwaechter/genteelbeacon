@@ -65,7 +65,8 @@ metadata:
   name: gaslightparlour
   namespace: genteelbeacon
 data:
-  APP_NAME: "Gaslight Parlour"
+  GENTEEL_NAME: "Gaslight Parlour"
+  GENTEEL_ROLE: "telegraphist"
   GENTEEL_CLOCK: "http://velvettimepiece:1333"
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
@@ -144,7 +145,8 @@ metadata:
   name: velvettimepiece
   namespace: genteelbeacon
 data:
-  APP_NAME: "Velvet timepiece"
+  GENTEEL_NAME: "Velvet timepiece"
+  GENTEEL_ROLE: "clock"
   OTLPHTTP_ENDPOINT: "otelcol-opentelemetry-collector.otel:4318"
 ---
 apiVersion: v1

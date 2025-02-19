@@ -139,7 +139,7 @@ spec:
           name: inkvalue
         target:
           type: AverageValue
-          averageValue: "30"
+          averageValue: "90"
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -163,4 +163,4 @@ spec:
           name: gearvalue
         target:
           type: AverageValue
-          averageValue: "50"
+          averageValue: "90"

@@ -29,7 +29,7 @@ There are options to send traces to an OpenTelemetry Endpoint, log in JSON and m
 * `APP_NAME` -- The name the application identifies as
 * `APP_PORT` -- The port to serve on, defaults to `1333` if unset
 * `APP_ADDR` -- The address to listen on, defaults to `0.0.0.0` if unset
-* `GENTEEL_ROLE` -- The role to assume, only a value `gearsmith` has an effect
+* `GENTEEL_ROLE` -- The role to assume, possible values are `telegraphist`, `clock` and `gearsmith`
 * `GENTEEL_CLOCK` -- The address of the clock instance
 * `OTLPHTTP_ENDPOINT` -- OTLP/HTTP-Endpoint to send metrics, traces & logs to (no `http://`-prefix!)
 * `JSONLOGGING` -- If set, will cause the logs to be emitted in JSON to `stdout`

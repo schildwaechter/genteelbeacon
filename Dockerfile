@@ -5,7 +5,6 @@ ARG TARGETARCH
 WORKDIR /go/src/genteelbeacon
 COPY *.go /go/src/genteelbeacon/
 COPY go.* /go/src/genteelbeacon/
-COPY gearsmith/*.go /go/src/genteelbeacon/gearsmith/
 RUN go get
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags "-X main.buildEpoch=$(date '+%s')" -o genteelbeacon .
 
