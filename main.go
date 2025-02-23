@@ -15,6 +15,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ansrivas/fiberprometheus/v2"
@@ -23,6 +24,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/healthcheck"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
+	"github.com/google/uuid"
 	slogfiber "github.com/samber/slog-fiber"
 	slogmulti "github.com/samber/slog-multi"
 
@@ -43,7 +45,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
@@ -147,7 +149,7 @@ func loggerSpanAttr(ctx context.Context, span trace.Span) slog.Attr {
 }
 
 func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
-	_, span := tracer.Start(ctx, "Grease Grate")
+	_, span := tracer.Start(ctx, "GreaseGrate")
 	defer span.End()
 
 	// Whether to trip (between 0 and 1)
@@ -156,7 +158,7 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	// not below 0.9, increasing probablility from 0.9-1 and always above
 	tripThreshold := (greaseFactor - 0.9) * 10
 
-	slog.Info(fmt.Sprintf("greaseFactor %f - tripThreshold %f - tripValue %f", greaseFactor, tripThreshold, tripValue))
+	logger.Info(fmt.Sprintf("greaseFactor %f - tripThreshold %f - tripValue %f", greaseFactor, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
 		err := errors.New("Grease Grate clogged 💀")
@@ -174,7 +176,7 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 }
 
 func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, timeString string, useClock bool, requestId string) (string, error) {
-	ctx, span := tracer.Start(ctx, "Scribe Study")
+	ctx, span := tracer.Start(ctx, "ScribeStudy")
 	defer span.End()
 
 	logger.DebugContext(ctx, "Scribe at work 🖊️")
@@ -319,7 +321,7 @@ func main() {
 	genteelRole := getEnv("GENTEEL_ROLE", "Default")
 	nodeName, err := os.Hostname()
 	if err != nil {
-		nodeName = "unknown host"
+		nodeName = "unknown_host"
 	}
 	startTime = time.Now()
 
@@ -341,7 +343,12 @@ func main() {
 		ReadinessEndpoint: "/readyz",
 	}))
 
-	commonAttribs := []attribute.KeyValue{semconv.ServiceNameKey.String(appName), attribute.String("hostname", nodeName), attribute.String("genteelrole", genteelRole)}
+	commonAttribs := []attribute.KeyValue{
+		semconv.ServiceNameKey.String(strings.ToLower(strings.ReplaceAll(appName, " ", ""))),
+		semconv.ServiceInstanceIDKey.String(uuid.New().String()),
+		attribute.String("hostname", nodeName),
+		attribute.String("genteelrole", genteelRole),
+	}
 
 	initGenteelGauges(appName, commonAttribs)
 	prometheus := fiberprometheus.NewWithDefaultRegistry(appName)
@@ -417,7 +424,7 @@ func main() {
 	} else {
 
 		app.Get("/timestamp", func(c *fiber.Ctx) error {
-			ctx, span := tracer.Start(c.UserContext(), "Timestamp Endpoint")
+			ctx, span := tracer.Start(c.UserContext(), "TimestampEndpoint")
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
@@ -437,7 +444,7 @@ func main() {
 
 		// Define the route for the main path '/telegram'
 		app.Get("/telegram", func(c *fiber.Ctx) error {
-			ctx, span := tracer.Start(c.UserContext(), "Telegram Endpoint")
+			ctx, span := tracer.Start(c.UserContext(), "TelegramEndpoint")
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 

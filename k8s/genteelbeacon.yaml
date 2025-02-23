@@ -64,6 +64,9 @@ kind: ConfigMap
 metadata:
   name: gaslightparlour
   namespace: genteelbeacon
+  labels:
+    app: gaslightparlour
+    genteelbeacon: gaslightparlour
 data:
   GENTEEL_NAME: "Gaslight Parlour"
   GENTEEL_ROLE: "telegraphist"
@@ -75,6 +78,9 @@ kind: Service
 metadata:
   name: gaslightparlour
   namespace: genteelbeacon
+  labels:
+    app: gaslightparlour
+    genteelbeacon: gaslightparlour
 spec:
   selector:
     app: gaslightparlour
@@ -144,6 +150,9 @@ kind: ConfigMap
 metadata:
   name: velvettimepiece
   namespace: genteelbeacon
+  labels:
+    app: velvettimepiece
+    genteelbeacon: velvettimepiece
 data:
   GENTEEL_NAME: "Velvet timepiece"
   GENTEEL_ROLE: "clock"
@@ -154,6 +163,9 @@ kind: Service
 metadata:
   name: velvettimepiece
   namespace: genteelbeacon
+  labels:
+    app: velvettimepiece
+    genteelbeacon: velvettimepiece
 spec:
   selector:
     app: velvettimepiece

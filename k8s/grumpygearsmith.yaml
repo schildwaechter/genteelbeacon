@@ -51,6 +51,7 @@ metadata:
   namespace: genteelbeacon
   labels:
     app: grumpygearsmith
+    genteelbeacon: grumpygearsmith
     schildwaechter: genteelbeacon
 spec:
   replicas: 1
@@ -61,6 +62,7 @@ spec:
     metadata:
       labels:
         app: grumpygearsmith
+        genteelbeacon: grumpygearsmith
     spec:
       volumes:
         - name: cert-volume
@@ -93,6 +95,9 @@ kind: Service
 metadata:
   name: grumpygearsmith
   namespace: genteelbeacon
+  labels:
+    app: grumpygearsmith
+    genteelbeacon: grumpygearsmith
 spec:
   selector:
     app: grumpygearsmith

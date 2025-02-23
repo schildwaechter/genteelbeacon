@@ -25,7 +25,6 @@ config:
 
   receivers:
     jaeger: null
-    prometheus: null
     zipkin: null
     otlp:
       protocols:
@@ -37,7 +36,7 @@ config:
     prometheus:
       config:
         scrape_configs:
-          - job_name: "otel-collector"
+          - job_name: "otel-collector-genteelbeacon"
             scrape_interval: 10s
             static_configs:
               - targets: ["localhost:8888"]

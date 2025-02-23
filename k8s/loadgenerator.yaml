@@ -1,7 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loadgenerator
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: loadgenerator
+  namespace: loadgenerator
   labels:
     app: loadgenerator
 spec:
@@ -22,10 +29,10 @@ spec:
           resources:
             requests:
               memory: "64Mi"
-              cpu: "10m"
+              cpu: "80m"
             limits:
               memory: "64Mi"
-              cpu: "10m"
+              cpu: "80m"
           command: ["/bin/bash", "-c", "--"]
           args:
             [

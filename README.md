@@ -10,11 +10,11 @@ When building manually, provide the build timestamp
 go build -ldflags "-X main.buildEpoch=$(date '+%s')" .
 ```
 
-Note that the Gearsmith will not work when not running inside a kubernetes pod running the [Docker](https://hub.docker.com/r/schildwaechter/genteelbeacon) image.
+Note that the Gearsmith will not work when not running inside a Kubernetes pod via the [Docker](https://hub.docker.com/r/schildwaechter/genteelbeacon) image.
 
 ## Using
 
-When the binary is running, simply call
+When the binary is running, simply call (depending on role)
 
 ```shell
 curl http://localhost:1333
@@ -26,9 +26,9 @@ curl http://localhost:1333/telegram
 
 There are options to send traces to an OpenTelemetry Endpoint, log in JSON and more, based on these environment variables.
 
-* `APP_NAME` -- The name the application identifies as
 * `APP_PORT` -- The port to serve on, defaults to `1333` if unset
 * `APP_ADDR` -- The address to listen on, defaults to `0.0.0.0` if unset
+* `GENTEEL_NAME` -- The name the application identifies as
 * `GENTEEL_ROLE` -- The role to assume, possible values are `telegraphist`, `clock` and `gearsmith`
 * `GENTEEL_CLOCK` -- The address of the clock instance
 * `OTLPHTTP_ENDPOINT` -- OTLP/HTTP-Endpoint to send metrics, traces & logs to (no `http://`-prefix!)

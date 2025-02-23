@@ -7,7 +7,7 @@ This is a minimal setup for testing locally with [kind](https://kind.sigs.k8s.io
 We use a dedicated kind cluster and set up the metrics API
 
 ```shell
-kind create cluster --name genteelbeacon --image kindest/node:v1.32.2
+kind create cluster --name genteelbeacon --image kindest/node:v1.31.6
 kubectl apply -k k8s/metrics-server
 ```
 
@@ -15,27 +15,28 @@ On a cloud installation, this is enabled by default.
 
 ## Gateway Fabric
 
-This assume you have [Kubernetes Cloud Provider for KIND](https://github.com/kubernetes-sigs/cloud-provider-kind?tab=readme-ov-file#install).
-
 Install the NGINX Gateway Fabric
 
 ```shell
 kubectl kustomize "https://github.com/nginx/nginx-gateway-fabric/config/crd/gateway-api/standard?ref=v1.6.1" | kubectl apply -f -
-helm upgrade --install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric --create-namespace -n nginx-gateway -f k8s/helm/nginx-gateway-fabric-values.yaml
-kubectl wait --timeout=5m -n nginx-gateway deployment/ngf-nginx-gateway-fabric --for=condition=Available
-LBIP=$(kubectl get svc/ngf-nginx-gateway-fabric -n nginx-gateway -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
-kubectl apply -f k8s/gateway.yaml
+helm upgrade --install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric --version "1.6.1" --create-namespace -n nginx-gateway -f k8s/helm/nginx-gateway-fabric-values.yaml
 ```
 
 ## Install a Genteel Beacon setup
 
 ```shell
 kubectl apply -f k8s/genteelbeacon.yaml
+kubectl apply -f k8s/gateway.yaml
 ```
 
-You can try
+## External ingress
+
+Locally, this assumes you have [Kubernetes Cloud Provider for KIND](https://github.com/kubernetes-sigs/cloud-provider-kind?tab=readme-ov-file#install).
+Alternatively, in the cloud this will also work.
 
 ```shell
+kubectl wait --timeout=5m -n nginx-gateway deployment/ngf-nginx-gateway-fabric --for=condition=Available
+LBIP=$(kubectl get svc/ngf-nginx-gateway-fabric -n nginx-gateway -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
 curl http://genteelbeacon.local/telegram --resolve genteelbeacon.local:80:${LBIP}
 ```
 
@@ -48,7 +49,20 @@ This assumes a deployment for forwarding data to a remote endpoint secured via b
 Add your endpoint and credentials in a `-secret` file to replace the `PLACEHOLDER`s in the values file.
 
 ```shell
-helm upgrade --install otelcol oci://ghcr.io/open-telemetry/opentelemetry-helm-charts/opentelemetry-collector --create-namespace -n otel -f k8s/helm/otelcol-deployment-values.yaml -f k8s/helm/otelcol-deployment-values-secret.yaml
+helm upgrade --install otelcol oci://ghcr.io/open-telemetry/opentelemetry-helm-charts/opentelemetry-collector --version "0.116.0" --create-namespace -n otel -f k8s/helm/otelcol-deployment-values.yaml -f k8s/helm/otelcol-deployment-values-secret.yaml
+```
+
+```shell
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.80.0/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.80.0/example/prometheus-operator-crd/monitoring.coreos.com_probes.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.80.0/example/prometheus-operator-crd/monitoring.coreos.com_scrapeconfigs.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.80.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+
+kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/download/v0.118.0/opentelemetry-operator.yaml
+
+
+kubectl apply -f k8s/opentelemetrycollector.yaml
 ```
 
 ## Customize with Kustomize
@@ -83,6 +97,15 @@ To restart everything, use
 
 ```shell
 kubectl rollout restart deployment -n genteelbeacon --selector=schildwaechter=genteelbeacon
+```
+
+## Load generation
+
+```shell
+kubectl apply -f k8s/loadgenerator.yaml
+INGRESS_CLUSTER_IP=$(kubectl get svc/ngf-nginx-gateway-fabric -n nginx-gateway -o jsonpath="{.spec.clusterIP}")
+kubectl patch deployment loadgenerator -n loadgenerator -p "{\"spec\":{\"template\":{\"spec\":{\"hostAliases\":[{\"ip\": \"${INGRESS_CLUSTER_IP}\", \"hostnames\":[\"genteelbeacon.local\"]}]}}}}"
+kubectl scale deployment loadgenerator -n loadgenerator --replicas 10
 ```
 
 ## Local builds
