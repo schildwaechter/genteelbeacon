@@ -3,3 +3,6 @@ nginx:
     telemetry:
       exporter:
         endpoint: otelcol-opentelemetry-collector.otel.svc:4317
+nginxGateway:
+  productTelemetry:
+    enable: false

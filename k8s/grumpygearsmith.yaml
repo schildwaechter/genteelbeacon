@@ -71,6 +71,7 @@ spec:
       containers:
         - name: genteelbeacon
           image: schildwaechter/genteelbeacon:main
+          imagePullPolicy: Always
           env:
             - name: GENTEEL_ROLE
               value: "gearsmith"
