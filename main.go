@@ -149,7 +149,7 @@ func loggerSpanAttr(ctx context.Context, span trace.Span) slog.Attr {
 }
 
 func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
-	_, span := tracer.Start(ctx, "GreaseGrate")
+	childCtx, span := tracer.Start(ctx, "GreaseGrate")
 	defer span.End()
 
 	// Whether to trip (between 0 and 1)
@@ -158,18 +158,45 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	// not below 0.9, increasing probablility from 0.9-1 and always above
 	tripThreshold := (greaseFactor - 0.9) * 10
 
-	logger.Info(fmt.Sprintf("greaseFactor %f - tripThreshold %f - tripValue %f", greaseFactor, tripThreshold, tripValue))
+	logger.DebugContext(childCtx, fmt.Sprintf("greaseFactor %f - tripThreshold %f - tripValue %f", greaseFactor, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
 		err := errors.New("Grease Grate clogged 💀")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 
-		logger.ErrorContext(ctx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+		logger.ErrorContext(childCtx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(childCtx, span))
 
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	} else {
-		time.Sleep(1 * time.Millisecond) // artificial span increase
+		time.Sleep(3 * time.Millisecond) // artificial span increase
+	}
+
+	return nil
+}
+
+func inkWell(ctx context.Context, tracer trace.Tracer) error {
+	childCtx, span := tracer.Start(ctx, "InkWell")
+	defer span.End()
+
+	// Whether to trip (between 0 and 1)
+	tripValue := rand.Float64()
+	// The threshold to trip the grease grate:
+	// not below 0.9, increasing probablility from 0.9-1 and always above
+	tripThreshold := (inkNeed - 0.9) * 10
+
+	logger.DebugContext(childCtx, fmt.Sprintf("inkNeed %f - tripThreshold %f - tripValue %f", inkNeed, tripThreshold, tripValue))
+
+	if tripValue < tripThreshold {
+		err := errors.New("Ink Well running dry 🐙")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+
+		logger.ErrorContext(childCtx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(childCtx, span))
+
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	} else {
+		time.Sleep(3 * time.Millisecond) // artificial span increase
 	}
 
 	return nil
@@ -334,7 +361,7 @@ func main() {
 		},
 		LivenessEndpoint: "/livez",
 		ReadinessProbe: func(c *fiber.Ctx) bool {
-			if greaseFactor < 0.9 {
+			if greaseFactor < 0.95 && inkNeed < 0.95 {
 				return true
 			} else {
 				return false
@@ -449,6 +476,11 @@ func main() {
 			defer span.End()
 
 			totalInkAnswers += 1
+			inkErr := inkWell(ctx, tracer)
+
+			if inkErr != nil {
+				return inkErr
+			}
 
 			if genteelRole != "telegraphist" && genteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
