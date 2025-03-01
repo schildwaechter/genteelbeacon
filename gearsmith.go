@@ -84,26 +84,28 @@ func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64,
 		var line string
 		for responseScanner.Scan() {
 			line = responseScanner.Text()
-			if strings.HasPrefix(line, "genteelbeacon_greasefactor_p") {
-				greaseReturn, err := strconv.ParseFloat(strings.TrimSpace(line[len("genteelbeacon_greasefactor_p"):]), 64)
+			if strings.HasPrefix(line, "genteelbeacon_greasebuildup_p") {
+				greaseReturn, err := strconv.ParseFloat(strings.TrimSpace(line[len("genteelbeacon_greasebuildup_p"):]), 64)
 				if err != nil {
 					logger.Error("Error parsing prometheus value")
+				} else {
+					greaseVal = greaseReturn
+					gearNumber += 1
+					gearSum += greaseVal
 				}
-				greaseVal = greaseReturn
-				gearNumber += 1
-				gearSum += greaseVal
 			}
-			if strings.HasPrefix(line, "genteelbeacon_inkneed_p") {
-				inkReturn, err := strconv.ParseFloat(strings.TrimSpace(line[len("genteelbeacon_inkneed_p"):]), 64)
+			if strings.HasPrefix(line, "genteelbeacon_inkdepletion_p") {
+				inkReturn, err := strconv.ParseFloat(strings.TrimSpace(line[len("genteelbeacon_inkdepletion_p"):]), 64)
 				if err != nil {
 					logger.Error("Error parsing prometheus value")
+				} else {
+					inkVal = inkReturn
+					inkNumber += 1
+					inkSum += inkVal
 				}
-				inkVal = inkReturn
-				inkNumber += 1
-				inkSum += inkVal
 			}
 		}
-		logger.Debug(fmt.Sprintf("Grease for "+pod.Name+" is %f\n", (greaseVal)) + fmt.Sprintf("Ink for "+pod.Name+" is %f\n", (inkVal)))
+		logger.Debug(fmt.Sprintf("Grease Buildup for "+pod.Name+" is %f\n", (greaseVal)) + fmt.Sprintf("Ink Depletion for "+pod.Name+" is %f\n", (inkVal)))
 	}
 
 	return gearNumber, gearSum, inkNumber, inkSum, nil
@@ -143,7 +145,7 @@ func gearValueServe(w http.ResponseWriter, r *http.Request) {
 			},
 			"metricName": "gearvalue",
 			"timestamp":  fmt.Sprintf(time.Now().Format(time.RFC3339)),
-			"value":      fmt.Sprintf("%d", int64(math.Round(beaconGear.Sum*100))),
+			"value":      fmt.Sprintf("%d", int64(math.Round(beaconGear.Sum))),
 		},
 		}}
 
@@ -181,7 +183,7 @@ func inkValueServe(w http.ResponseWriter, r *http.Request) {
 			},
 			"metricName": "inkvalue",
 			"timestamp":  fmt.Sprintf(time.Now().Format(time.RFC3339)),
-			"value":      fmt.Sprintf("%d", int64(math.Round(beaconInk.Sum*100))),
+			"value":      fmt.Sprintf("%d", int64(math.Round(beaconInk.Sum))),
 		},
 		}}
 

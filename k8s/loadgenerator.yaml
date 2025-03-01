@@ -22,6 +22,7 @@ spec:
       labels:
         app: loadgenerator
     spec:
+      terminationGracePeriodSeconds: 0
       containers:
         - name: loadgenerator
           image: schildwaechter/k8sdebugger:main

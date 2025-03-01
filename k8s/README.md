@@ -7,7 +7,7 @@ This is a minimal setup for testing locally with [kind](https://kind.sigs.k8s.io
 We use a dedicated kind cluster and set up the metrics API
 
 ```shell
-kind create cluster --name genteelbeacon --image kindest/node:v1.31.6
+kind create cluster --name genteelbeacon --image kindest/node:v1.31.4
 kubectl apply -k k8s/metrics-server
 ```
 

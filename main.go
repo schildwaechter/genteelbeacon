@@ -52,18 +52,21 @@ import (
 )
 
 var (
-	buildEpoch            string = "0"
-	startTime             time.Time
-	greaseFactor          float64 = 1.0
-	inkNeed               float64 = 0.0
-	greaseFactorGaugeProm prometheus.Gauge
-	inkNeedGaugeProm      prometheus.Gauge
-	greaseFactorGaugeOtel metric.Float64ObservableGauge
-	inkNeedGaugeOtel      metric.Float64ObservableGauge
-	totalGearAnswers      int64 = 0
-	totalInkAnswers       int64 = 0
-	tracer                trace.Tracer
-	logger                *slog.Logger
+	buildEpoch    string = "0"
+	greaseBuildup int64  = 0
+	inkDepletion  int64  = 0
+	greaseChan    chan int64
+	inkChan       chan int64
+
+	greaseBuildupGaugeProm prometheus.Gauge
+	inkDepletionGaugeProm  prometheus.Gauge
+	greaseBuildupGaugeOtel metric.Int64ObservableGauge
+	inkDepletionGaugeOtel  metric.Int64ObservableGauge
+
+	totalGearAnswers int64 = 0
+	totalInkAnswers  int64 = 0
+	tracer           trace.Tracer
+	logger           *slog.Logger
 )
 
 // Get environment variable with a default
@@ -156,9 +159,9 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	tripValue := rand.Float64()
 	// The threshold to trip the grease grate:
 	// not below 0.9, increasing probablility from 0.9-1 and always above
-	tripThreshold := (greaseFactor - 0.9) * 10
+	tripThreshold := float64(greaseBuildup-90) / 10
 
-	logger.DebugContext(childCtx, fmt.Sprintf("greaseFactor %f - tripThreshold %f - tripValue %f", greaseFactor, tripThreshold, tripValue))
+	logger.DebugContext(childCtx, fmt.Sprintf("greaseBuildup %d - tripThreshold %f - tripValue %f", greaseBuildup, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
 		err := errors.New("Grease Grate clogged 💀")
@@ -183,9 +186,9 @@ func inkWell(ctx context.Context, tracer trace.Tracer) error {
 	tripValue := rand.Float64()
 	// The threshold to trip the grease grate:
 	// not below 0.9, increasing probablility from 0.9-1 and always above
-	tripThreshold := (inkNeed - 0.9) * 10
+	tripThreshold := float64(inkDepletion-90) / 10
 
-	logger.DebugContext(childCtx, fmt.Sprintf("inkNeed %f - tripThreshold %f - tripValue %f", inkNeed, tripThreshold, tripValue))
+	logger.DebugContext(childCtx, fmt.Sprintf("inkDepletion %d - tripThreshold %f - tripValue %f", inkDepletion, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
 		err := errors.New("Ink Well running dry 🐙")
@@ -286,45 +289,39 @@ func initGenteelGauges(appName string, commonAttribs []attribute.KeyValue) error
 	meterProvider := otel.GetMeterProvider()
 	meter := meterProvider.Meter(appName)
 
+	// greaseBuildupGaugeProm prometheus.Gauge
+	// inkDepletionGaugeProm  prometheus.Gauge
+	// greaseBuildupGaugeOtel metric.Int64Gauge
+	// inkDepletionGaugeOtel  metric.Int64Gauge
+
 	// register the OTEL metrics
-	greaseFactorGaugeOtel, _ = meter.Float64ObservableGauge(
-		"genteelbeacon_greasefactor",
-		metric.WithDescription("The Genteel Beacon's current grease factor"),
+	greaseBuildupGaugeOtel, _ = meter.Int64ObservableGauge(
+		"genteelbeacon_greasebuildup",
+		metric.WithDescription("The Genteel Beacon's current grease buildup"),
 	)
-	inkNeedGaugeOtel, _ = meter.Float64ObservableGauge(
-		"genteelbeacon_inkneed",
-		metric.WithDescription("The Genteel Beacon's current ink need"),
+	inkDepletionGaugeOtel, _ = meter.Int64ObservableGauge(
+		"genteelbeacon_inkdepletion",
+		metric.WithDescription("The Genteel Beacon's current ink depletion"),
 	)
 
 	// register the Prometheus metrics
-	greaseFactorGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "genteelbeacon_greasefactor_p",
-		Help: "The Genteel Beacon's current grease factor",
+	greaseBuildupGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "genteelbeacon_greasebuildup_p",
+		Help: "The Genteel Beacon's current grease buidlup",
 	})
-	inkNeedGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "genteelbeacon_inkneed_p",
-		Help: "The Genteel Beacon's current ink need",
+	inkDepletionGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "genteelbeacon_inkdepletion_p",
+		Help: "The Genteel Beacon's current ink depletion",
 	})
-
-	// start a go routine to update the values
-	go func() {
-		for {
-			greaseFactor = float64(totalGearAnswers) / (2 * (time.Since(startTime).Seconds() + 10))
-			greaseFactorGaugeProm.Set(greaseFactor)
-			inkNeed = float64(totalInkAnswers) / (time.Since(startTime).Seconds() + 10)
-			inkNeedGaugeProm.Set(inkNeed)
-			time.Sleep(1 * time.Second)
-		}
-	}()
 
 	// OTEL sending
 	var err error = nil
 	_, err = meter.RegisterCallback(
 		func(ctx context.Context, observer metric.Observer) error {
 			// return the global value
-			observer.ObserveFloat64(greaseFactorGaugeOtel, greaseFactor, metric.WithAttributes(commonAttribs...))
+			observer.ObserveInt64(greaseBuildupGaugeOtel, greaseBuildup, metric.WithAttributes(commonAttribs...))
 			return nil
-		}, greaseFactorGaugeOtel)
+		}, greaseBuildupGaugeOtel)
 
 	if err != nil {
 		log.Fatalf("Failed to register callback: %v", err)
@@ -332,9 +329,9 @@ func initGenteelGauges(appName string, commonAttribs []attribute.KeyValue) error
 	_, err = meter.RegisterCallback(
 		func(ctx context.Context, observer metric.Observer) error {
 			// return the global value
-			observer.ObserveFloat64(inkNeedGaugeOtel, inkNeed, metric.WithAttributes(commonAttribs...))
+			observer.ObserveInt64(inkDepletionGaugeOtel, inkDepletion, metric.WithAttributes(commonAttribs...))
 			return nil
-		}, inkNeedGaugeOtel)
+		}, inkDepletionGaugeOtel)
 
 	if err != nil {
 		log.Fatalf("Failed to register callback: %v", err)
@@ -350,7 +347,41 @@ func main() {
 	if err != nil {
 		nodeName = "unknown_host"
 	}
-	startTime = time.Now()
+	greaseChan = make(chan int64)
+	inkChan = make(chan int64)
+
+	go func() {
+		for {
+			greaseChange := <-greaseChan
+			if greaseChange == -1 && greaseBuildup > 0 {
+				greaseBuildup--
+				greaseBuildupGaugeProm.Dec()
+			} else if greaseChange == 1 && rand.IntN(100) < 50 {
+				greaseBuildup++
+				greaseBuildupGaugeProm.Inc()
+			}
+		}
+	}()
+	go func() {
+		for {
+			inkChange := <-inkChan
+			if inkChange == -1 && inkDepletion > 0 {
+				inkDepletion--
+				inkDepletionGaugeProm.Dec()
+			} else if inkChange == 1 {
+				inkDepletion++
+				inkDepletionGaugeProm.Inc()
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			greaseChan <- -1
+			inkChan <- -1
+			time.Sleep(1 * time.Second)
+		}
+	}()
 
 	app := fiber.New()
 	app.Use(requestid.New())
@@ -361,7 +392,7 @@ func main() {
 		},
 		LivenessEndpoint: "/livez",
 		ReadinessProbe: func(c *fiber.Ctx) bool {
-			if greaseFactor < 0.95 && inkNeed < 0.95 {
+			if greaseBuildup < 95 && inkDepletion < 95 {
 				return true
 			} else {
 				return false
@@ -458,12 +489,12 @@ func main() {
 			if genteelRole != "clock" && genteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
-			totalGearAnswers += 1
-			greaseErr := greaseGrate(ctx, tracer)
 
+			greaseErr := greaseGrate(ctx, tracer)
 			if greaseErr != nil {
 				return greaseErr
 			}
+			greaseChan <- 1
 
 			theTime := time.Now().Format("2006-01-02 15:04:05")
 			return c.SendString(theTime)
@@ -475,16 +506,15 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
-			totalInkAnswers += 1
-			inkErr := inkWell(ctx, tracer)
-
-			if inkErr != nil {
-				return inkErr
-			}
-
 			if genteelRole != "telegraphist" && genteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
+
+			inkErr := inkWell(ctx, tracer)
+			if inkErr != nil {
+				return inkErr
+			}
+			inkChan <- 1
 
 			var clockString string
 			var clockResponseError error = nil
