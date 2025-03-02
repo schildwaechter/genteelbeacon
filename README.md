@@ -1,5 +1,9 @@
 # Genteel Beacon
 
+![image](assets/banner.png)
+
+The Genteel Beacon is an application specifically designed for playing with observability in steam-powered microservices.
+
 ## Building
 
 The repository is set up for [Air](https://github.com/air-verse/air), `go install tool`.

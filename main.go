@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,11 +20,13 @@ import (
 	"time"
 
 	"github.com/ansrivas/fiberprometheus/v2"
+	"github.com/enescakir/emoji"
 	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/healthcheck"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
+	html "github.com/gofiber/template/html/v2"
 	"github.com/google/uuid"
 	slogfiber "github.com/samber/slog-fiber"
 	slogmulti "github.com/samber/slog-multi"
@@ -68,6 +71,21 @@ var (
 	tracer           trace.Tracer
 	logger           *slog.Logger
 )
+
+type Telegram struct {
+	Message        string
+	Emoji          string
+	FormVersion    string
+	Service        string
+	Telegraphist   string
+	Identifier     string
+	ClockReference string
+}
+
+type ClockReading struct {
+	TimeReading string
+	ClockName   string
+}
 
 // Get environment variable with a default
 func getEnv(name string, defaultValue string) string {
@@ -205,7 +223,7 @@ func inkWell(ctx context.Context, tracer trace.Tracer) error {
 	return nil
 }
 
-func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, timeString string, useClock bool, requestId string) (string, error) {
+func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clockResponseData ClockReading, useClock bool, requestId string) (Telegram, error) {
 	ctx, span := tracer.Start(ctx, "ScribeStudy")
 	defer span.End()
 
@@ -218,12 +236,19 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, timeS
 
 	span.AddEvent("Preparing message")
 	scribeErrorChance := rand.Float64()
-	scribeSignature := "Build " + buildEpoch + ", »" + appName + "« running on " + nodeName + " 🙋 " + requestId
-	var scribeMessage string
+	var responseTelegram Telegram
+	responseTelegram.Identifier = requestId
+	responseTelegram.Service = appName
+	responseTelegram.Telegraphist = nodeName
+	responseTelegram.FormVersion = buildEpoch
 	if useClock {
-		scribeMessage = "🕰️ The time is " + timeString + "\n"
+		responseTelegram.Message = "The time is " + clockResponseData.TimeReading
+		responseTelegram.Emoji = ":mantelpiece_clock:"
+		responseTelegram.ClockReference = clockResponseData.ClockName
 	} else {
-		scribeMessage = "📅 Today is " + timeString + " – that's all we have!\n"
+		responseTelegram.Message = "Today is " + clockResponseData.TimeReading + " – that's all we have!"
+		responseTelegram.Emoji = ":calendar:"
+		responseTelegram.ClockReference = "unavailable"
 	}
 
 	if scribeErrorChance < 0.01 { // very rare super long delay
@@ -238,7 +263,8 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, timeS
 
 		logger.ErrorContext(ctx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
 
-		return "🕰️ The time is not available at this moment!!" + scribeSignature, fiber.NewError(fiber.StatusTeapot, err.Error())
+		responseTelegram.Message = "The time is not available at this moment!!"
+		return responseTelegram, fiber.NewError(fiber.StatusTeapot, err.Error())
 	} else if scribeErrorChance > 0.96 { // oh dear (if we haven't tripped before)
 		span.AddEvent("Urgent need")
 		err := errors.New("Scribe seems to be indisposed 💩")
@@ -247,16 +273,17 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, timeS
 
 		logger.ErrorContext(ctx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
 
-		return "🕰️ The time is not available at this moment!!" + scribeSignature, fiber.NewError(fiber.StatusServiceUnavailable, err.Error())
+		responseTelegram.Message = "The time is not available at this moment!!"
+		return responseTelegram, fiber.NewError(fiber.StatusServiceUnavailable, err.Error())
 	} else {
 		time.Sleep(time.Duration(rand.IntN(70)+1) * time.Millisecond) // normal artificial span increase
 		span.AddEvent("Message ready")
 	}
 
-	return scribeMessage + scribeSignature, nil
+	return responseTelegram, nil
 }
 
-func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, clock string) (error, string) {
+func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, clock string) (error, ClockReading) {
 	_, span := tracer.Start(ctx, "CourteousCourier")
 	defer span.End()
 
@@ -266,12 +293,18 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 
 	// Inject TraceParent to Context
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	var ClockResponseData ClockReading
 
 	resp, err := client.Do(req)
 	if err != nil {
 		span.RecordError(err)
 		logger.ErrorContext(ctx, "Error checking clock!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
-		return err, "Error checking clock!"
+		ClockResponseData = ClockReading{
+			TimeReading: "Error checking clock!",
+			ClockName:   "unknown",
+		}
+
+		return err, ClockResponseData
 	}
 	defer resp.Body.Close()
 
@@ -279,10 +312,15 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	if err != nil {
 		span.RecordError(err)
 		logger.ErrorContext(ctx, err.Error())
-		return nil, ""
+		ClockResponseData = ClockReading{
+			TimeReading: err.Error(),
+			ClockName:   "unknown",
+		}
+		return nil, ClockResponseData
 	}
+	json.Unmarshal(responseData, &ClockResponseData)
 
-	return nil, string(responseData)
+	return nil, ClockResponseData
 }
 
 func initGenteelGauges(appName string, commonAttribs []attribute.KeyValue) error {
@@ -383,8 +421,12 @@ func main() {
 		}
 	}()
 
-	app := fiber.New()
+	engine := html.New("./views", ".html")
+	app := fiber.New(fiber.Config{
+		Views: engine,
+	})
 	app.Use(requestid.New())
+	app.Static("/assets", "./assets")
 
 	app.Use(healthcheck.New(healthcheck.Config{
 		LivenessProbe: func(c *fiber.Ctx) bool {
@@ -496,8 +538,16 @@ func main() {
 			}
 			greaseChan <- 1
 
-			theTime := time.Now().Format("2006-01-02 15:04:05")
-			return c.SendString(theTime)
+			nodeName, err := os.Hostname()
+			if err != nil {
+				nodeName = "unknown host"
+			}
+			myClockReading := ClockReading{
+				TimeReading: time.Now().Format("2006-01-02 15:04:05"),
+				ClockName:   nodeName,
+			}
+
+			return c.JSON(myClockReading)
 		})
 
 		// Define the route for the main path '/telegram'
@@ -516,27 +566,40 @@ func main() {
 			}
 			inkChan <- 1
 
-			var clockString string
+			var ClockResponseData ClockReading
 			var clockResponseError error = nil
 			clock, useClock := os.LookupEnv("GENTEEL_CLOCK")
 
 			if useClock {
-				clockResponseError, clockString = courteousCourier(ctx, tracer, client, clock)
+				clockResponseError, ClockResponseData = courteousCourier(ctx, tracer, client, clock)
 			} else {
 				logger.DebugContext(ctx, "No clock available")
-				clockString = time.Now().Format("2006-01-02")
+				ClockResponseData = ClockReading{
+					TimeReading: time.Now().Format("2006-01-02"),
+					ClockName:   "local",
+				}
 			}
 			if clockResponseError != nil {
 				return clockResponseError
 			}
 
-			scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, appName, clockString, useClock, slogfiber.GetRequestIDFromContext(c.Context()))
+			scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, appName, ClockResponseData, useClock, slogfiber.GetRequestIDFromContext(c.Context()))
 
 			if scribeErr != nil {
 				return scribeErr
 			}
 
-			return c.SendString(scribeStudyMessage + " 🏁\n")
+			//c.Accepts("text/html")
+			offer := c.Accepts(fiber.MIMETextPlain, fiber.MIMETextHTML, fiber.MIMEApplicationJSON)
+			logger.DebugContext(ctx, "Offer: "+offer)
+			if offer == "text/html" {
+				return c.Render("html", scribeStudyMessage)
+			}
+			if offer == "application/json" {
+				return c.JSON(scribeStudyMessage)
+			}
+			scribeStudyMessage.Emoji = emoji.Parse(scribeStudyMessage.Emoji)
+			return c.Render("text", scribeStudyMessage)
 		})
 
 		// Start the server on the specified port and address
