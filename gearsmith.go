@@ -38,6 +38,7 @@ func GetNamespace() (string, error) {
 	return ns, nil
 }
 
+// find all pods with genteelbeacon label
 func getBeacons(clientset *kubernetes.Clientset) ([]string, error) {
 	deployments, err := clientset.AppsV1().Deployments(nameSpace).List(context.TODO(), metav1.ListOptions{LabelSelector: "genteelbeacon"})
 	if err != nil {
@@ -55,6 +56,7 @@ func getBeacons(clientset *kubernetes.Clientset) ([]string, error) {
 	return deploymentNames, nil
 }
 
+// calculate the ink and gear sums for a "beacon", i.e. the value fo the gentlebeacon label
 func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64, int64, float64, error) {
 	pods, err := clientset.CoreV1().Pods(nameSpace).List(context.TODO(), metav1.ListOptions{LabelSelector: "genteelbeacon=" + beacon})
 	if err != nil {
@@ -111,8 +113,15 @@ func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64,
 	return gearNumber, gearSum, inkNumber, inkSum, nil
 }
 
+// just return the current values for direct insights
 func statsServe(w http.ResponseWriter, r *http.Request) {
-	jsonString, _ := json.Marshal(gearStats)
+	type combinedStat struct {
+		Gears    map[string]gearStat
+		Inkwells map[string]inkStat
+	}
+	logger.Info("FHmm: %v", gearStats)
+	combinedStats := combinedStat{gearStats, inkStats}
+	jsonString, _ := json.Marshal(combinedStats)
 	fmt.Fprint(w, string(jsonString))
 }
 
@@ -120,16 +129,32 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "{\"status\":\"healthy\"}")
 }
 
-func gearValueServe(w http.ResponseWriter, r *http.Request) {
+// return the value for the gear/ink
+func valueServe(w http.ResponseWriter, r *http.Request) {
 	beacon := r.PathValue("beacon")
 	if beacon == "" {
 		logger.Warn("No beacon in query!")
 	}
-	beaconGear := gearStats[beacon]
-	if beaconGear.Count == 0 {
-		logger.Warn("Queried non-existent gear: " + beacon)
+	// get the right sum
+	var returnSum float64 = 0
+	if r.PathValue("valuename") == "gearvalue" {
+		beaconGear := gearStats[beacon]
+		if beaconGear.Count == 0 {
+			logger.Warn("Queried non-existent gear: " + beacon)
+		}
+		returnSum = beaconGear.Sum
+	} else if r.PathValue("valuename") == "inkvalue" {
+		beaconInk := inkStats[beacon]
+		if beaconInk.Count == 0 {
+			logger.Warn("Queried non-existent ink: " + beacon)
+		}
+		returnSum = beaconInk.Sum
+	} else {
+		returnSum = 0
 	}
 
+	// return data in expected format
+	// https://medium.com/swlh/building-your-own-custom-metrics-api-for-kubernetes-horizontal-pod-autoscaler-277473dea2c1
 	data := map[string]interface{}{
 		"kind":       "MetricValueList",
 		"apiVersion": "custom.metrics.k8s.io/v1beta1",
@@ -143,53 +168,14 @@ func gearValueServe(w http.ResponseWriter, r *http.Request) {
 				"name":       beacon,
 				"apiVersion": "v1beta1",
 			},
-			"metricName": "gearvalue",
+			"metricName": r.PathValue("valuename"),
 			"timestamp":  fmt.Sprintf(time.Now().Format(time.RFC3339)),
-			"value":      fmt.Sprintf("%d", int64(math.Round(beaconGear.Sum))),
+			"value":      fmt.Sprintf("%d", int64(math.Round(returnSum))),
 		},
 		}}
-
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		logger.Error("could not marshal json: %s\n", err.Error())
-		return
-	}
-
-	fmt.Fprint(w, string(jsonData))
-}
-
-func inkValueServe(w http.ResponseWriter, r *http.Request) {
-	beacon := r.PathValue("beacon")
-	if beacon == "" {
-		logger.Warn("No beacon in query!")
-	}
-	beaconInk := inkStats[beacon]
-	if beaconInk.Count == 0 {
-		logger.Warn("Queried non-existent ink: " + beacon)
-	}
-
-	data := map[string]interface{}{
-		"kind":       "MetricValueList",
-		"apiVersion": "custom.metrics.k8s.io/v1beta1",
-		"metadata": map[string]interface{}{
-			"selfLink": "/apis/custom.metrics.k8s.io/v1beta1",
-		},
-		"items": []interface{}{map[string]interface{}{
-			"describedObject": map[string]interface{}{
-				"kind":       "Service",
-				"namespace":  nameSpace,
-				"name":       beacon,
-				"apiVersion": "v1beta1",
-			},
-			"metricName": "inkvalue",
-			"timestamp":  fmt.Sprintf(time.Now().Format(time.RFC3339)),
-			"value":      fmt.Sprintf("%d", int64(math.Round(beaconInk.Sum))),
-		},
-		}}
-
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		logger.Error("could not marshal json: %s\n", err.Error())
+		logger.Error(fmt.Sprintf("could not marshal json: %s\n", err.Error()))
 		return
 	}
 
@@ -210,6 +196,7 @@ type inkStat struct {
 var gearStats map[string]gearStat
 var inkStats map[string]inkStat
 
+// reach out to cluster and get what we want
 func setStats() {
 	for {
 		config, err := rest.InClusterConfig()
@@ -247,6 +234,7 @@ func setStats() {
 	}
 }
 
+// this is what we run in gearsmith mode
 func RunGearsmith() {
 	gearStats = make(map[string]gearStat)
 	inkStats = make(map[string]inkStat)
@@ -263,8 +251,7 @@ func RunGearsmith() {
 	router := http.NewServeMux()
 	router.HandleFunc("/stats", statsServe)
 	router.HandleFunc("/apis/custom.metrics.k8s.io/v1beta1", healthCheck)
-	router.HandleFunc("/apis/custom.metrics.k8s.io/v1beta1/namespaces/"+ns+"/services/{beacon}/gearvalue", gearValueServe)
-	router.HandleFunc("/apis/custom.metrics.k8s.io/v1beta1/namespaces/"+ns+"/services/{beacon}/inkvalue", inkValueServe)
+	router.HandleFunc("/apis/custom.metrics.k8s.io/v1beta1/namespaces/"+ns+"/services/{beacon}/{valuename}", valueServe)
 
 	http.ListenAndServeTLS(":6443", "/cert/tls.crt", "/cert/tls.key", router)
 }

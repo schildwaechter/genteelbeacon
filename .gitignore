@@ -3,3 +3,4 @@ k8s/kustomization.yaml
 k8s/helm/*-secret.yaml
 *.bak
 tls.*
+*_templ.go

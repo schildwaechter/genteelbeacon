@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/ansrivas/fiberprometheus/v2"
@@ -26,7 +27,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/healthcheck"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
-	html "github.com/gofiber/template/html/v2"
 	"github.com/google/uuid"
 	slogfiber "github.com/samber/slog-fiber"
 	slogmulti "github.com/samber/slog-multi"
@@ -55,9 +55,11 @@ import (
 )
 
 var (
-	buildEpoch    string = "0"
-	greaseBuildup int64  = 0
-	inkDepletion  int64  = 0
+	// to be overwritten on build
+	buildEpoch string = "0"
+	// grease and ink tracking
+	greaseBuildup int64 = 0
+	inkDepletion  int64 = 0
 	greaseChan    chan int64
 	inkChan       chan int64
 
@@ -66,10 +68,8 @@ var (
 	greaseBuildupGaugeOtel metric.Int64ObservableGauge
 	inkDepletionGaugeOtel  metric.Int64ObservableGauge
 
-	totalGearAnswers int64 = 0
-	totalInkAnswers  int64 = 0
-	tracer           trace.Tracer
-	logger           *slog.Logger
+	tracer trace.Tracer
+	logger *slog.Logger
 )
 
 type Telegram struct {
@@ -169,6 +169,7 @@ func loggerSpanAttr(ctx context.Context, span trace.Span) slog.Attr {
 	return span_attr
 }
 
+// check whether greas buildup is too much
 func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	childCtx, span := tracer.Start(ctx, "GreaseGrate")
 	defer span.End()
@@ -182,6 +183,7 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	logger.DebugContext(childCtx, fmt.Sprintf("greaseBuildup %d - tripThreshold %f - tripValue %f", greaseBuildup, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
+		// this is a serious failure
 		err := errors.New("Grease Grate clogged 💀")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -196,6 +198,7 @@ func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
 	return nil
 }
 
+// check whether we have depelted the ink
 func inkWell(ctx context.Context, tracer trace.Tracer) error {
 	childCtx, span := tracer.Start(ctx, "InkWell")
 	defer span.End()
@@ -209,6 +212,7 @@ func inkWell(ctx context.Context, tracer trace.Tracer) error {
 	logger.DebugContext(childCtx, fmt.Sprintf("inkDepletion %d - tripThreshold %f - tripValue %f", inkDepletion, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
+		// this is a serious failure
 		err := errors.New("Ink Well running dry 🐙")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -223,6 +227,7 @@ func inkWell(ctx context.Context, tracer trace.Tracer) error {
 	return nil
 }
 
+// create the telegram to be sent
 func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clockResponseData ClockReading, useClock bool, requestId string) (Telegram, error) {
 	ctx, span := tracer.Start(ctx, "ScribeStudy")
 	defer span.End()
@@ -283,6 +288,7 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clock
 	return responseTelegram, nil
 }
 
+// check the remote clock
 func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, clock string) (error, ClockReading) {
 	_, span := tracer.Start(ctx, "CourteousCourier")
 	defer span.End()
@@ -323,14 +329,10 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	return nil, ClockResponseData
 }
 
+// set up metrics in both OTEL and Proemtheus
 func initGenteelGauges(appName string, commonAttribs []attribute.KeyValue) error {
 	meterProvider := otel.GetMeterProvider()
 	meter := meterProvider.Meter(appName)
-
-	// greaseBuildupGaugeProm prometheus.Gauge
-	// inkDepletionGaugeProm  prometheus.Gauge
-	// greaseBuildupGaugeOtel metric.Int64Gauge
-	// inkDepletionGaugeOtel  metric.Int64Gauge
 
 	// register the OTEL metrics
 	greaseBuildupGaugeOtel, _ = meter.Int64ObservableGauge(
@@ -352,7 +354,7 @@ func initGenteelGauges(appName string, commonAttribs []attribute.KeyValue) error
 		Help: "The Genteel Beacon's current ink depletion",
 	})
 
-	// OTEL sending
+	// OTEL sending as callback on meter activity (from the channel handlers)
 	var err error = nil
 	_, err = meter.RegisterCallback(
 		func(ctx context.Context, observer metric.Observer) error {
@@ -388,6 +390,7 @@ func main() {
 	greaseChan = make(chan int64)
 	inkChan = make(chan int64)
 
+	// manage the grease and ink
 	go func() {
 		for {
 			greaseChange := <-greaseChan
@@ -413,6 +416,7 @@ func main() {
 		}
 	}()
 
+	// refill ink and clean grease
 	go func() {
 		for {
 			greaseChan <- -1
@@ -421,13 +425,12 @@ func main() {
 		}
 	}()
 
-	engine := html.New("./views", ".html")
-	app := fiber.New(fiber.Config{
-		Views: engine,
-	})
+	app := fiber.New()
 	app.Use(requestid.New())
-	app.Static("/assets", "./assets")
+	// telegram background image, before tracing/logging/metrics
+	app.Static("/assets/background.png", "./assets/background.png")
 
+	// healthcheck before any tracing/logging/metrics
 	app.Use(healthcheck.New(healthcheck.Config{
 		LivenessProbe: func(c *fiber.Ctx) bool {
 			return true
@@ -443,6 +446,7 @@ func main() {
 		ReadinessEndpoint: "/readyz",
 	}))
 
+	// common attributes for all OTEL data
 	commonAttribs := []attribute.KeyValue{
 		semconv.ServiceNameKey.String(strings.ToLower(strings.ReplaceAll(appName, " ", ""))),
 		semconv.ServiceInstanceIDKey.String(uuid.New().String()),
@@ -450,18 +454,19 @@ func main() {
 		attribute.String("genteelrole", genteelRole),
 	}
 
+	// we use both prometheus and OTEL
 	initGenteelGauges(appName, commonAttribs)
 	prometheus := fiberprometheus.NewWithDefaultRegistry(appName)
 	prometheus.RegisterAt(app, "/metrics")
-
 	app.Use(prometheus.Middleware)
-
 	app.Use(otelfiber.Middleware())
 
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Genteel Beacon 🚨")
 	})
 
+	// configure sending OTEL if needed
+	// if it's not configured, everything just remains silent
 	otlphttpEndpoint, ok := os.LookupEnv("OTLPHTTP_ENDPOINT")
 	if ok {
 		tp, err := initTracer(otlphttpEndpoint, commonAttribs)
@@ -489,11 +494,12 @@ func main() {
 	} else {
 		slog.Info("Not sending OTEL data")
 	}
+	// set up the logging with fanout to both stdout and (optionally) OTEL
 	_, jsonLogging := os.LookupEnv("JSONLOGGING")
 	if jsonLogging {
 		logger = slog.New(
 			slogmulti.Fanout(
-				slog.Default().Handler(),
+				otelslog.NewLogger(appName).Handler(),
 				slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}),
 			),
 		)
@@ -505,6 +511,7 @@ func main() {
 			),
 		)
 	}
+	// always log traceID, spanID and requestID
 	loggerConfig := slogfiber.Config{
 		WithSpanID:    true,
 		WithTraceID:   true,
@@ -513,10 +520,12 @@ func main() {
 	app.Use(slogfiber.NewWithConfig(logger, loggerConfig))
 	app.Use(recover.New())
 
+	// we need to make calls out
 	client := &http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	}
 
+	// start tracing now
 	tracer = otel.Tracer(appName)
 
 	if genteelRole == "gearsmith" {
@@ -528,16 +537,19 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
+			// the shall usually one serve a single purpose
 			if genteelRole != "clock" && genteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
 
+			// check whether we have accumulated too much grease
 			greaseErr := greaseGrate(ctx, tracer)
 			if greaseErr != nil {
 				return greaseErr
 			}
 			greaseChan <- 1
 
+			// prepare the answer with hostname and current time
 			nodeName, err := os.Hostname()
 			if err != nil {
 				nodeName = "unknown host"
@@ -550,22 +562,25 @@ func main() {
 			return c.JSON(myClockReading)
 		})
 
-		// Define the route for the main path '/telegram'
 		app.Get("/telegram", func(c *fiber.Ctx) error {
+			// add tracing
 			ctx, span := tracer.Start(c.UserContext(), "TelegramEndpoint")
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
+			// the binary shall usually one serve a single purpose
 			if genteelRole != "telegraphist" && genteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
 
+			// test whether we still have ink
 			inkErr := inkWell(ctx, tracer)
 			if inkErr != nil {
 				return inkErr
 			}
 			inkChan <- 1
 
+			// check whether we use a clock
 			var ClockResponseData ClockReading
 			var clockResponseError error = nil
 			clock, useClock := os.LookupEnv("GENTEEL_CLOCK")
@@ -573,6 +588,7 @@ func main() {
 			if useClock {
 				clockResponseError, ClockResponseData = courteousCourier(ctx, tracer, client, clock)
 			} else {
+				// return simplified answer
 				logger.DebugContext(ctx, "No clock available")
 				ClockResponseData = ClockReading{
 					TimeReading: time.Now().Format("2006-01-02"),
@@ -583,26 +599,31 @@ func main() {
 				return clockResponseError
 			}
 
+			// actually create the message
 			scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, appName, ClockResponseData, useClock, slogfiber.GetRequestIDFromContext(c.Context()))
 
 			if scribeErr != nil {
 				return scribeErr
 			}
 
-			//c.Accepts("text/html")
+			// respond with appropriate mimetype
 			offer := c.Accepts(fiber.MIMETextPlain, fiber.MIMETextHTML, fiber.MIMEApplicationJSON)
 			logger.DebugContext(ctx, "Offer: "+offer)
 			if offer == "text/html" {
-				return c.Render("html", scribeStudyMessage)
+				c.Set("Content-type", "text/html")
+				return htmlTelegram(scribeStudyMessage).Render(c.Context(), c.Response().BodyWriter())
 			}
 			if offer == "application/json" {
 				return c.JSON(scribeStudyMessage)
 			}
 			scribeStudyMessage.Emoji = emoji.Parse(scribeStudyMessage.Emoji)
-			return c.Render("text", scribeStudyMessage)
+			tmpl, err := template.New("telegramText").Parse("{{ .Emoji }} {{ .Message }} provided by {{ .ClockReference }}\nBuild {{ .FormVersion }}, »{{ .Service}}« running on {{ .Telegraphist }} 🙋 {{ .Identifier }}")
+			if err != nil {
+				panic(err)
+			}
+			return tmpl.ExecuteTemplate(c.Response().BodyWriter(), "telegramText", scribeStudyMessage)
 		})
 
-		// Start the server on the specified port and address
 		appPort := getEnv("APP_PORT", "1333")
 		appAddr := getEnv("APP_ADDR", "0.0.0.0")
 		log.Fatal(app.Listen(appAddr + ":" + appPort))

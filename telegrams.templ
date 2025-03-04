@@ -1,0 +1,50 @@
+package main
+
+templ htmlTelegram(telegram Telegram){
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{ telegram.Service}</title>
+    <style>
+        body,
+        html {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #333;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="telegramCanvas"></canvas>
+    @templ.JSONScript("telegram", telegram)
+    <script>
+        const canvas = document.getElementById('telegramCanvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.src = 'assets/background.png';
+        img.onload = function (){
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            ctx.font = '20px Courier New';
+            ctx.fillStyle = '#333';
+
+            ctx.fillText(JSON.parse(document.getElementById("telegram").textContent)["FormVersion"], canvas.width - 270, 270);
+            ctx.fillText('»'+JSON.parse(document.getElementById("telegram").textContent)["Service"]+'«', canvas.width - 420, 323);
+
+            ctx.fillText(JSON.parse(document.getElementById("telegram").textContent)["Message"], 222, 456);
+            ctx.fillText('emoji> '+JSON.parse(document.getElementById("telegram").textContent)["Emoji"], 222, 546);
+            ctx.fillText('clock> '+JSON.parse(document.getElementById("telegram").textContent)["ClockReference"], 222, 636);
+
+            ctx.fillText(JSON.parse(document.getElementById("telegram").textContent)["Telegraphist"], 260, canvas.height - 103);
+            ctx.fillText(JSON.parse(document.getElementById("telegram").textContent)["Identifier"], 260, canvas.height - 56);
+        };
+    </script>
+</body>
+</html>
+}
