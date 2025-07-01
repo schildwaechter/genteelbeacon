@@ -513,9 +513,11 @@ func main() {
 	}
 	// always log traceID, spanID and requestID
 	loggerConfig := slogfiber.Config{
-		WithSpanID:    true,
-		WithTraceID:   true,
-		WithRequestID: true,
+		WithSpanID:         true,
+		WithTraceID:        true,
+		WithRequestID:      true,
+		WithRequestHeader:  true,
+		WithResponseHeader: true,
 	}
 	app.Use(slogfiber.NewWithConfig(logger, loggerConfig))
 	app.Use(recover.New())
