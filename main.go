@@ -539,7 +539,7 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
-			// the shall usually one serve a single purpose
+			// the binary shall usually one serve a single purpose
 			if genteelRole != "clock" && genteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
@@ -624,6 +624,53 @@ func main() {
 				panic(err)
 			}
 			return tmpl.ExecuteTemplate(c.Response().BodyWriter(), "telegramText", scribeStudyMessage)
+		})
+
+		app.Get("/nod", func(c *fiber.Ctx) error {
+			ctx, span := tracer.Start(c.UserContext(), "DebutanteNodEndpoint")
+			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
+			defer span.End()
+			// the binary shall usually one serve a single purpose
+			if genteelRole != "debutante" && genteelRole != "schildwaechter" {
+				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
+			}
+			nodeName, err := os.Hostname()
+			if err != nil {
+				nodeName = "unknown host"
+			}
+			nodOptions := []string{"A pleasure!", "Charmed!", "Delighted!", "Charmed, I'm sure!", "Quite so!", "Splendid!", "How lovely!", "My compliments!", "Pray tell!", "Fancy that!", "Always a joy!", "Quel plaisir!", "Enchantée!", "Très honorée!", "Très ravie!"}
+			randomIndex := rand.IntN(len(nodOptions))
+			randomNod := nodOptions[randomIndex]
+			logger.DebugContext(c.UserContext(), "Nodding with »"+randomNod+"« from "+buildEpoch+" on "+nodeName, loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+			return c.Status(http.StatusOK).SendString("»" + randomNod + "« 💌 " + appName + " 🪭 Build time is " + buildEpoch + ", running on " + nodeName)
+		})
+
+		app.Get("/curtsey", func(c *fiber.Ctx) error {
+			ctx, span := tracer.Start(c.UserContext(), "DebutanteCurtseyEndpoint")
+			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
+			defer span.End()
+			// the binary shall usually one serve a single purpose
+			if genteelRole != "debutante" && genteelRole != "schildwaechter" {
+				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
+			}
+			logger.InfoContext(ctx, "Curtseying with request headers", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+			headers := make(map[string]string)
+			c.Request().Header.VisitAll(func(key, value []byte) {
+				headers[string(key)] = string(value)
+			})
+			return c.Status(http.StatusOK).JSON(headers)
+		})
+
+		app.Get("/calamity", func(c *fiber.Ctx) error {
+			ctx, span := tracer.Start(c.UserContext(), "DebutanteCalamityEndpoint")
+			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
+			defer span.End()
+			// the binary shall usually one serve a single purpose
+			if genteelRole != "debutante" && genteelRole != "schildwaechter" {
+				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
+			}
+			logger.ErrorContext(ctx, "Calamity has been invoked!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "Oh, dear heavens! A most dreadful calamity has ensued! 💥"})
 		})
 
 		appPort := getEnv("APP_PORT", "1333")
