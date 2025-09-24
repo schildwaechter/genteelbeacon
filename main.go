@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -85,6 +86,14 @@ type Telegram struct {
 type ClockReading struct {
 	TimeReading string
 	ClockName   string
+}
+
+type CallingCard struct {
+	Attendant   string
+	Salutation  string
+	CardVersion string
+	Signature   string
+	Identifier  string
 }
 
 // Get environment variable with a default
@@ -288,6 +297,32 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clock
 	return responseTelegram, nil
 }
 
+func drawingRoom(ctx context.Context, tracer trace.Tracer, appName string, requestId string) (CallingCard, error) {
+	ctx, span := tracer.Start(ctx, "DrawingRoom")
+	defer span.End()
+
+	var responseCallingCard CallingCard
+	nodeName, err := os.Hostname()
+	if err != nil {
+		nodeName = "unknown host"
+	}
+	nodOptions := []string{
+		"A pleasure!", "Charmed!", "Delighted!", "Charmed, I'm sure!",
+		"Quite so!", "Splendid!", "How lovely!", "My compliments!",
+		"Pray tell!", "Fancy that!", "Always a joy!", "Quel plaisir!",
+		"Enchantée!", "Très honorée!", "Très ravie!",
+	}
+	randomIndex := rand.IntN(len(nodOptions))
+	randomNod := nodOptions[randomIndex]
+	responseCallingCard.Attendant = appName
+	responseCallingCard.Salutation = randomNod
+	responseCallingCard.CardVersion = buildEpoch
+	responseCallingCard.Signature = nodeName
+	responseCallingCard.Identifier = requestId
+
+	return responseCallingCard, nil
+}
+
 // check the remote clock
 func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, clock string) (error, ClockReading) {
 	_, span := tracer.Start(ctx, "CourteousCourier")
@@ -426,12 +461,13 @@ func main() {
 	}()
 
 	app := fiber.New()
+	appInt := fiber.New()
 	app.Use(requestid.New())
 	// telegram background image, before tracing/logging/metrics
 	app.Static("/assets/background.png", "./assets/background.png")
 
-	// healthcheck before any tracing/logging/metrics
-	app.Use(healthcheck.New(healthcheck.Config{
+	// healthcheck before any tracing/logging/metrics and on internal port
+	appInt.Use(healthcheck.New(healthcheck.Config{
 		LivenessProbe: func(c *fiber.Ctx) bool {
 			return true
 		},
@@ -457,7 +493,7 @@ func main() {
 	// we use both prometheus and OTEL
 	initGenteelGauges(appName, commonAttribs)
 	prometheus := fiberprometheus.NewWithDefaultRegistry(appName)
-	prometheus.RegisterAt(app, "/metrics")
+	prometheus.RegisterAt(appInt, "/metrics")
 	app.Use(prometheus.Middleware)
 	app.Use(otelfiber.Middleware())
 
@@ -539,7 +575,7 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
-			// the shall usually one serve a single purpose
+			// the binary shall usually one serve a single purpose
 			if genteelRole != "clock" && genteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
@@ -561,7 +597,7 @@ func main() {
 				ClockName:   nodeName,
 			}
 
-			return c.JSON(myClockReading)
+			return c.Status(http.StatusOK).JSON(myClockReading)
 		})
 
 		app.Get("/telegram", func(c *fiber.Ctx) error {
@@ -570,7 +606,7 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 
-			// the binary shall usually one serve a single purpose
+			// the binary shall usually only serve a single purpose
 			if genteelRole != "telegraphist" && genteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
@@ -616,7 +652,7 @@ func main() {
 				return htmlTelegram(scribeStudyMessage).Render(c.Context(), c.Response().BodyWriter())
 			}
 			if offer == "application/json" {
-				return c.JSON(scribeStudyMessage)
+				return c.Status(http.StatusOK).JSON(scribeStudyMessage)
 			}
 			scribeStudyMessage.Emoji = emoji.Parse(scribeStudyMessage.Emoji)
 			tmpl, err := template.New("telegramText").Parse("{{ .Emoji }} {{ .Message }} provided by {{ .ClockReference }}\nBuild {{ .FormVersion }}, »{{ .Service}}« running on {{ .Telegraphist }} 🙋 {{ .Identifier }}")
@@ -626,8 +662,79 @@ func main() {
 			return tmpl.ExecuteTemplate(c.Response().BodyWriter(), "telegramText", scribeStudyMessage)
 		})
 
+		app.Get("/emission", func(c *fiber.Ctx) error {
+			ctx, span := tracer.Start(c.UserContext(), "EmissionEndpoint")
+			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
+			defer span.End()
+			// the binary shall usually only serve a single purpose
+			if genteelRole != "lightkeeper" && genteelRole != "schildwaechter" {
+				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
+			}
+			logger.InfoContext(ctx, "Emanating local information with request headers", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+			headers := make(map[string]string)
+			c.Request().Header.VisitAll(func(key, value []byte) {
+				headers[string(key)] = string(value)
+			})
+			// gather Genteel environment variables
+			genteelenvs := make(map[string]string)
+			for _, e := range os.Environ() {
+				if strings.HasPrefix(strings.ToUpper(e), "GENTEEL_") {
+					pair := strings.SplitN(e, "=", 2)
+					if len(pair) == 2 {
+						genteelenvs[pair[0]] = pair[1]
+					}
+				}
+			}
+			// get calling card
+			drawingRoomResponse, _ := drawingRoom(ctx, tracer, appName, slogfiber.GetRequestIDFromContext(c.Context()))
+			tmpl, err := template.New("callingCardText").Parse("»{{ .Salutation }}« 👩🏻 {{ .Attendant }} 💌 Sincerely, {{ .Signature }}\n✉️ Card version {{ .CardVersion }} 🙋 {{ .Identifier }}")
+			if err != nil {
+				panic(err)
+			}
+			// put everything together
+			result := map[string]interface{}{
+				"Request-Headers":     headers,
+				"Genteel-Environment": genteelenvs,
+				"Calling-Card":        drawingRoomResponse,
+			}
+			// respond with appropriate mimetype
+			offer := c.Accepts(fiber.MIMETextPlain, fiber.MIMETextHTML, fiber.MIMEApplicationJSON)
+			logger.DebugContext(ctx, "Offer: "+offer)
+			if offer == "application/json" {
+				return c.Status(http.StatusOK).JSON(result)
+			}
+			return tmpl.ExecuteTemplate(c.Response().BodyWriter(), "callingCardText", drawingRoomResponse)
+		})
+
+		app.Get("/calamity", func(c *fiber.Ctx) error {
+			ctx, span := tracer.Start(c.UserContext(), "CalamityEndpoint")
+			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
+			defer span.End()
+			// the binary shall usually only serve a single purpose
+			if genteelRole != "lightkeeper" && genteelRole != "schildwaechter" {
+				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
+			}
+			// causing an error on purpose
+			logger.ErrorContext(ctx, "Calamity has been invoked!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "Oh, no! A most dreadful calamity has occured! 💥"})
+		})
+
 		appPort := getEnv("APP_PORT", "1333")
 		appAddr := getEnv("APP_ADDR", "0.0.0.0")
-		log.Fatal(app.Listen(appAddr + ":" + appPort))
+		appIntPort := getEnv("INT_PORT", "1337")
+		appIntAddr := getEnv("INT_ADDR", "127.0.0.1")
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Fatal(appInt.Listen(appIntAddr + ":" + appIntPort))
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Fatal(app.Listen(appAddr + ":" + appPort))
+		}()
+		wg.Wait()
 	}
 }
