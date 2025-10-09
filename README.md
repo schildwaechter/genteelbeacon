@@ -55,6 +55,14 @@ It's also possible to directly trigger and error.
 curl http://localhost:1333/calamity
 ```
 
+### Agitator
+
+In this role the application's healthcheck will become unreliable and the app will crash if requested
+
+```shell
+curl http://localhost:1333/calamity
+```
+
 ### Gearsmith
 
 The Gearsmith provides custom metrics to Kubernetes.
@@ -69,7 +77,7 @@ There are options to send traces to an OpenTelemetry Endpoint, log in JSON and m
 * `INT_PORT` -- The port to serve metrics and healthchecks on, defaults to `1337` if unset
 * `INT_ADDR` -- The address to listen on for metrics and healthchecks, defaults to `127.0.0.0` if unset
 * `GENTEEL_NAME` -- The name the application identifies as
-* `GENTEEL_ROLE` -- The role to assume, possible values are `telegraphist`, `clock`, `gearsmith` and `lightkeeper`
+* `GENTEEL_ROLE` -- The role to assume, possible values are `telegraphist`, `clock`, `gearsmith`, `lightkeeper` and `agitator`
 * `GENTEEL_CLOCK` -- The address of the clock instance
 * `OTLPHTTP_ENDPOINT` -- OTLP/HTTP-Endpoint to send metrics, traces & logs to (no `http://`-prefix!)
 * `JSONLOGGING` -- If set, will cause the logs to be emitted in JSON to `stdout`

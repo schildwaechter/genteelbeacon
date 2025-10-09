@@ -16,6 +16,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -469,7 +470,20 @@ func main() {
 	// healthcheck before any tracing/logging/metrics and on internal port
 	appInt.Use(healthcheck.New(healthcheck.Config{
 		LivenessProbe: func(c *fiber.Ctx) bool {
-			return true
+			if genteelRole == "agitator" {
+				// let's agitate
+				genteelAgitation, err := strconv.Atoi(getEnv("GENTEEL_AGITATION", "0"))
+				if err != nil {
+					return false
+				}
+				if rand.IntN(100) < genteelAgitation {
+					return true
+				} else {
+					return false
+				}
+			} else {
+				return true
+			}
 		},
 		LivenessEndpoint: "/livez",
 		ReadinessProbe: func(c *fiber.Ctx) bool {
@@ -711,6 +725,11 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 			// the binary shall usually only serve a single purpose
+			if genteelRole == "agitator" {
+				// this is a bit brutal
+				logger.ErrorContext(ctx, "Disrupt!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+				os.Exit(133)
+			}
 			if genteelRole != "lightkeeper" && genteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
