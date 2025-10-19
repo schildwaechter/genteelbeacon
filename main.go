@@ -517,8 +517,18 @@ func main() {
 
 	// configure sending OTEL if needed
 	// if it's not configured, everything just remains silent
-	otlphttpEndpoint, ok := os.LookupEnv("OTLPHTTP_ENDPOINT")
-	if ok {
+	otlphttpEndpoint, otlphttpOk := os.LookupEnv("OTLPHTTP_ENDPOINT")
+	otlphttpTracesEndpoint, otlphttpTracesOk := os.LookupEnv("OTLPHTTP_TRACES_ENDPOINT")
+	if otlphttpTracesOk {
+		tp, err := initTracer(otlphttpTracesEndpoint, commonAttribs)
+		if err != nil {
+			slog.Error("Can't send traces")
+		}
+		defer func() {
+			_ = tp.Shutdown(context.Background())
+		}()
+		slog.DebugContext(context.Background(), "Sending traces to "+otlphttpTracesEndpoint)
+	} else if otlphttpOk {
 		tp, err := initTracer(otlphttpEndpoint, commonAttribs)
 		if err != nil {
 			slog.Error("Can't send traces")
