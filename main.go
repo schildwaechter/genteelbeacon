@@ -527,7 +527,7 @@ func main() {
 		defer func() {
 			_ = tp.Shutdown(context.Background())
 		}()
-		slog.DebugContext(context.Background(), "Sending traces to "+otlphttpTracesEndpoint)
+		slog.InfoContext(context.Background(), "Sending traces to "+otlphttpTracesEndpoint)
 	} else if otlphttpOk {
 		tp, err := initTracer(otlphttpEndpoint, commonAttribs)
 		if err != nil {
@@ -550,9 +550,9 @@ func main() {
 		defer func() {
 			_ = lp.Shutdown(context.Background())
 		}()
-		slog.Info("Sending OTEL data to " + otlphttpEndpoint)
+		slog.InfoContext(context.Background(), "Sending OTEL data to "+otlphttpEndpoint)
 	} else {
-		slog.Info("Not sending OTEL data")
+		slog.InfoContext(context.Background(), "Not sending OTEL data")
 	}
 	// set up the logging with fanout to both stdout and (optionally) OTEL
 	_, jsonLogging := os.LookupEnv("JSONLOGGING")
