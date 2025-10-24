@@ -380,14 +380,21 @@ func initGenteelGauges(appName string, commonAttribs []attribute.KeyValue) error
 		metric.WithDescription("The Genteel Beacon's current ink depletion"),
 	)
 
+	promLabels := make(prometheus.Labels)
+	for _, attr := range commonAttribs {
+		promLabels[string(attr.Key)] = attr.Value.AsString()
+	}
+
 	// register the Prometheus metrics
 	greaseBuildupGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "genteelbeacon_greasebuildup_p",
-		Help: "The Genteel Beacon's current grease buidlup",
+		Name:        "genteelbeacon_greasebuildup_p",
+		Help:        "The Genteel Beacon's current grease buidlup",
+		ConstLabels: promLabels,
 	})
 	inkDepletionGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "genteelbeacon_inkdepletion_p",
-		Help: "The Genteel Beacon's current ink depletion",
+		Name:        "genteelbeacon_inkdepletion_p",
+		Help:        "The Genteel Beacon's current ink depletion",
+		ConstLabels: promLabels,
 	})
 
 	// OTEL sending as callback on meter activity (from the channel handlers)
