@@ -87,9 +87,14 @@ func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64,
 		for responseScanner.Scan() {
 			line = responseScanner.Text()
 			if strings.HasPrefix(line, "genteelbeacon_greasebuildup_p") {
-				greaseReturn, err := strconv.ParseFloat(strings.TrimSpace(line[len("genteelbeacon_greasebuildup_p"):]), 64)
+				parts := strings.Fields(line)
+				if len(parts) < 2 {
+					logger.Error("Error parsing prometheus value: malformed line")
+					continue
+				}
+				greaseReturn, err := strconv.ParseFloat(parts[len(parts)-1], 64)
 				if err != nil {
-					logger.Error("Error parsing prometheus value")
+					logger.Error("Error parsing prometheus value for grease")
 				} else {
 					greaseVal = greaseReturn
 					gearNumber += 1
@@ -97,9 +102,14 @@ func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64,
 				}
 			}
 			if strings.HasPrefix(line, "genteelbeacon_inkdepletion_p") {
-				inkReturn, err := strconv.ParseFloat(strings.TrimSpace(line[len("genteelbeacon_inkdepletion_p"):]), 64)
+				parts := strings.Fields(line)
+				if len(parts) < 2 {
+					logger.Error("Error parsing prometheus value: malformed line")
+					continue
+				}
+				inkReturn, err := strconv.ParseFloat(parts[len(parts)-1], 64)
 				if err != nil {
-					logger.Error("Error parsing prometheus value")
+					logger.Error("Error parsing prometheus value for ink")
 				} else {
 					inkVal = inkReturn
 					inkNumber += 1
