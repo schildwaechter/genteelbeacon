@@ -70,7 +70,7 @@ func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64,
 	var inkSum float64 = 0
 	for _, pod := range pods.Items {
 		logger.Debug("Querying " + pod.Name + " at IP " + pod.Status.PodIP)
-		req, err := http.NewRequest("GET", "http://"+pod.Status.PodIP+":1333/metrics", nil)
+		req, err := http.NewRequest("GET", "http://"+pod.Status.PodIP+":1337/metrics", nil)
 		client := &http.Client{Timeout: 3 * time.Second}
 
 		resp, err := client.Do(req)
