@@ -8,10 +8,16 @@ The Genteel Beacon is an application specifically designed for playing with obse
 
 The repository is set up for [Air](https://github.com/air-verse/air), `go install tool`.
 
-When building manually, provide the build timestamp
+When building manually, provide the version or build timestamp
 
 ```shell
-go build -ldflags "-X main.buildEpoch=$(date '+%s')" .
+go build -ldflags "-X main.buildVersion=$(cat VERSION)" .
+```
+
+or
+
+```shell
+go build -ldflags "-X main.buildVersion=$(date '+%s')" .
 ```
 
 ## Using

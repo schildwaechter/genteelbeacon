@@ -5,7 +5,7 @@ tmp_dir = "tmp"
 [build]
   args_bin = []
   bin = "./tmp/genteelbeacon"
-  cmd = "go tool templ generate && go build -ldflags \"-X main.buildEpoch=$(date '+%s')\" -o ./tmp/genteelbeacon ."
+  cmd = "go tool templ generate && go build -ldflags \"-X main.buildVersion=$(cat VERSION|sed 's/dev//')local\" -o ./tmp/genteelbeacon ."
   delay = 1000
   exclude_dir = ["assets", "k8s", "tmp", "vendor", "testdata"]
   exclude_file = ["telegrams_templ.go"]

@@ -58,7 +58,7 @@ import (
 
 var (
 	// to be overwritten on build
-	buildEpoch string = "0"
+	buildVersion string = "0.0.0"
 	// grease and ink tracking
 	greaseBuildup int64 = 0
 	inkDepletion  int64 = 0
@@ -255,7 +255,7 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clock
 	responseTelegram.Identifier = requestId
 	responseTelegram.Service = appName
 	responseTelegram.Telegraphist = nodeName
-	responseTelegram.FormVersion = buildEpoch
+	responseTelegram.FormVersion = buildVersion
 	if useClock {
 		responseTelegram.Message = "The time is " + clockResponseData.TimeReading
 		responseTelegram.Emoji = ":mantelpiece_clock:"
@@ -317,7 +317,7 @@ func drawingRoom(ctx context.Context, tracer trace.Tracer, appName string, reque
 	randomNod := nodOptions[randomIndex]
 	responseCallingCard.Attendant = appName
 	responseCallingCard.Salutation = randomNod
-	responseCallingCard.CardVersion = buildEpoch
+	responseCallingCard.CardVersion = buildVersion
 	responseCallingCard.Signature = nodeName
 	responseCallingCard.Identifier = requestId
 
