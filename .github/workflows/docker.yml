@@ -22,9 +22,9 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Make a development
+      - name: Make a development build
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: echo "$(cat VERSION | grep 's/dev/b/')${GITHUB_RUN_NUMBER}" > VERSION
+        run: echo "$(cat VERSION | sed 's/dev/b/')${GITHUB_RUN_NUMBER}" > VERSION
 
       - name: Make a release version
         if: startsWith(github.ref, 'refs/tags/v')
