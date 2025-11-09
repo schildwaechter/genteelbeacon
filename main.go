@@ -461,10 +461,11 @@ func main() {
 
 	// refill ink and clean grease
 	go func() {
-		for {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
 			greaseChan <- -1
 			inkChan <- -1
-			time.Sleep(1 * time.Second)
 		}
 	}()
 
