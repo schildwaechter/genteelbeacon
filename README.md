@@ -7,17 +7,23 @@ The Genteel Beacon is an application specifically designed for playing with obse
 ## Building
 
 The repository is set up for [Air](https://github.com/air-verse/air), `go install tool`.
+```shell
+go mod download
+go get -u .../
+```
 
 When building manually, provide the version or build timestamp
 
 ```shell
-go build -ldflags "-X main.buildVersion=$(cat VERSION)" .
+go tool templ generate ./internal/templates
+go build -ldflags "-X main.buildVersion=$(cat VERSION)" ./cmd/genteelbeacon
 ```
 
 or
 
 ```shell
-go build -ldflags "-X main.buildVersion=$(date '+%s')" .
+go tool templ generate ./internal/templates
+go build -ldflags "-X main.buildVersion=$(date '+%s')" ./cmd/genteelbeacon
 ```
 
 ## Using

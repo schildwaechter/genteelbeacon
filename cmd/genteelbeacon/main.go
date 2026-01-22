@@ -22,6 +22,9 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/schildwaechter/genteelbeacon/internal/templates"
+	"github.com/schildwaechter/genteelbeacon/internal/types"
+
 	"github.com/ansrivas/fiberprometheus/v2"
 	"github.com/enescakir/emoji"
 	"github.com/gofiber/contrib/otelfiber/v2"
@@ -73,29 +76,6 @@ var (
 	tracer trace.Tracer
 	logger *slog.Logger
 )
-
-type Telegram struct {
-	Message        string
-	Emoji          string
-	FormVersion    string
-	Service        string
-	Telegraphist   string
-	Identifier     string
-	ClockReference string
-}
-
-type ClockReading struct {
-	TimeReading string
-	ClockName   string
-}
-
-type CallingCard struct {
-	Attendant   string
-	Salutation  string
-	CardVersion string
-	Signature   string
-	Identifier  string
-}
 
 // Get environment variable with a default
 func getEnv(name string, defaultValue string) string {
@@ -238,7 +218,7 @@ func inkWell(ctx context.Context, tracer trace.Tracer) error {
 }
 
 // create the telegram to be sent
-func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clockResponseData ClockReading, useClock bool, requestId string) (Telegram, error) {
+func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clockResponseData types.ClockReading, useClock bool, requestId string) (types.Telegram, error) {
 	ctx, span := tracer.Start(ctx, "ScribeStudy")
 	defer span.End()
 
@@ -251,7 +231,7 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clock
 
 	span.AddEvent("Preparing message")
 	scribeErrorChance := rand.Float64()
-	var responseTelegram Telegram
+	var responseTelegram types.Telegram
 	responseTelegram.Identifier = requestId
 	responseTelegram.Service = appName
 	responseTelegram.Telegraphist = nodeName
@@ -298,11 +278,11 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clock
 	return responseTelegram, nil
 }
 
-func drawingRoom(ctx context.Context, tracer trace.Tracer, appName string, requestId string) (CallingCard, error) {
+func drawingRoom(ctx context.Context, tracer trace.Tracer, appName string, requestId string) (types.CallingCard, error) {
 	ctx, span := tracer.Start(ctx, "DrawingRoom")
 	defer span.End()
 
-	var responseCallingCard CallingCard
+	var responseCallingCard types.CallingCard
 	nodeName, err := os.Hostname()
 	if err != nil {
 		nodeName = "unknown host"
@@ -325,7 +305,7 @@ func drawingRoom(ctx context.Context, tracer trace.Tracer, appName string, reque
 }
 
 // check the remote clock
-func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, clock string) (error, ClockReading) {
+func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Client, clock string) (error, types.ClockReading) {
 	_, span := tracer.Start(ctx, "CourteousCourier")
 	defer span.End()
 
@@ -335,13 +315,13 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 
 	// Inject TraceParent to Context
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-	var ClockResponseData ClockReading
+	var ClockResponseData types.ClockReading
 
 	resp, err := client.Do(req)
 	if err != nil {
 		span.RecordError(err)
 		logger.ErrorContext(ctx, "Error checking clock!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
-		ClockResponseData = ClockReading{
+		ClockResponseData = types.ClockReading{
 			TimeReading: "Error checking clock!",
 			ClockName:   "unknown",
 		}
@@ -354,7 +334,7 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	if err != nil {
 		span.RecordError(err)
 		logger.ErrorContext(ctx, err.Error())
-		ClockResponseData = ClockReading{
+		ClockResponseData = types.ClockReading{
 			TimeReading: err.Error(),
 			ClockName:   "unknown",
 		}
@@ -624,7 +604,7 @@ func main() {
 			if err != nil {
 				nodeName = "unknown host"
 			}
-			myClockReading := ClockReading{
+			myClockReading := types.ClockReading{
 				TimeReading: time.Now().Format("2006-01-02 15:04:05"),
 				ClockName:   nodeName,
 			}
@@ -651,7 +631,7 @@ func main() {
 			inkChan <- 1
 
 			// check whether we use a clock
-			var ClockResponseData ClockReading
+			var ClockResponseData types.ClockReading
 			var clockResponseError error = nil
 			clock, useClock := os.LookupEnv("GENTEEL_CLOCK")
 
@@ -660,7 +640,7 @@ func main() {
 			} else {
 				// return simplified answer
 				logger.DebugContext(ctx, "No clock available")
-				ClockResponseData = ClockReading{
+				ClockResponseData = types.ClockReading{
 					TimeReading: time.Now().Format("2006-01-02"),
 					ClockName:   "local",
 				}
@@ -681,7 +661,7 @@ func main() {
 			logger.DebugContext(ctx, "Offer: "+offer)
 			if offer == "text/html" {
 				c.Set("Content-type", "text/html")
-				return htmlTelegram(scribeStudyMessage).Render(c.Context(), c.Response().BodyWriter())
+				return templates.HtmlTelegram(scribeStudyMessage).Render(c.Context(), c.Response().BodyWriter())
 			}
 			if offer == "application/json" {
 				return c.Status(http.StatusOK).JSON(scribeStudyMessage)
