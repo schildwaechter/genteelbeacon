@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -22,6 +21,10 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/schildwaechter/genteelbeacon/internal/config"
+	"github.com/schildwaechter/genteelbeacon/internal/gearsmith"
+	"github.com/schildwaechter/genteelbeacon/internal/o11y"
+	"github.com/schildwaechter/genteelbeacon/internal/services"
 	"github.com/schildwaechter/genteelbeacon/internal/templates"
 	"github.com/schildwaechter/genteelbeacon/internal/types"
 
@@ -34,29 +37,14 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/google/uuid"
 	slogfiber "github.com/samber/slog-fiber"
-	slogmulti "github.com/samber/slog-multi"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/log/global"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
-
-	"go.opentelemetry.io/contrib/bridges/otelslog"
 )
 
 var (
@@ -65,16 +53,8 @@ var (
 	// grease and ink tracking
 	greaseBuildup int64 = 0
 	inkDepletion  int64 = 0
-	greaseChan    chan int64
-	inkChan       chan int64
-
-	greaseBuildupGaugeProm prometheus.Gauge
-	inkDepletionGaugeProm  prometheus.Gauge
-	greaseBuildupGaugeOtel metric.Int64ObservableGauge
-	inkDepletionGaugeOtel  metric.Int64ObservableGauge
 
 	tracer trace.Tracer
-	logger *slog.Logger
 )
 
 // Get environment variable with a default
@@ -86,143 +66,12 @@ func getEnv(name string, defaultValue string) string {
 	return defaultValue
 }
 
-func initTracer(otlphttpEndpoint string, commonAttribs []attribute.KeyValue) (*sdktrace.TracerProvider, error) {
-	ctx := context.Background()
-	exporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(otlphttpEndpoint), otlptracehttp.WithInsecure())
-	if err != nil {
-		return nil, err
-	}
-
-	tracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			commonAttribs...,
-		)),
-	)
-	otel.SetTracerProvider(tracerProvider)
-	otel.SetTextMapPropagator(propagation.TraceContext{})
-	return tracerProvider, nil
-}
-
-func initMeter(otlphttpEndpoint string, commonAttribs []attribute.KeyValue) (*sdkmetric.MeterProvider, error) {
-	ctx := context.Background()
-	metricExporter, err := otlpmetrichttp.New(ctx, otlpmetrichttp.WithEndpoint(otlphttpEndpoint), otlpmetrichttp.WithInsecure())
-	if err != nil {
-		return nil, err
-	}
-
-	meterProvider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
-		sdkmetric.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			commonAttribs...,
-		)),
-	)
-	otel.SetMeterProvider(meterProvider)
-
-	return meterProvider, nil
-}
-
-func initLogger(otlphttpEndpoint string, commonAttribs []attribute.KeyValue) (*sdklog.LoggerProvider, error) {
-	ctx := context.Background()
-	logExporter, err := otlploghttp.New(ctx, otlploghttp.WithEndpoint(otlphttpEndpoint), otlploghttp.WithInsecure())
-	if err != nil {
-		return nil, err
-	}
-
-	logProvider := sdklog.NewLoggerProvider(
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
-		sdklog.WithResource(resource.NewWithAttributes(
-			semconv.SchemaURL,
-			commonAttribs...,
-		)),
-	)
-	global.SetLoggerProvider(logProvider)
-
-	return logProvider, nil
-}
-
-func loggerTraceAttr(ctx context.Context, span trace.Span) slog.Attr {
-	var trace_attr slog.Attr
-	if trace.SpanFromContext(ctx).SpanContext().HasTraceID() {
-		trace_attr = slog.String("trace_id", span.SpanContext().TraceID().String())
-	}
-	return trace_attr
-}
-func loggerSpanAttr(ctx context.Context, span trace.Span) slog.Attr {
-	var span_attr slog.Attr
-	if trace.SpanFromContext(ctx).SpanContext().HasSpanID() {
-		span_attr = slog.String("span_id", span.SpanContext().SpanID().String())
-	}
-	return span_attr
-}
-
-// check whether greas buildup is too much
-func greaseGrate(ctx context.Context, tracer trace.Tracer) error {
-	childCtx, span := tracer.Start(ctx, "GreaseGrate")
-	defer span.End()
-
-	// Whether to trip (between 0 and 1)
-	tripValue := rand.Float64()
-	// The threshold to trip the grease grate:
-	// not below 0.9, increasing probablility from 0.9-1 and always above
-	tripThreshold := float64(greaseBuildup-90) / 10
-
-	logger.DebugContext(childCtx, fmt.Sprintf("greaseBuildup %d - tripThreshold %f - tripValue %f", greaseBuildup, tripThreshold, tripValue))
-
-	if tripValue < tripThreshold {
-		// this is a serious failure
-		err := errors.New("Grease Grate clogged 💀")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-
-		logger.ErrorContext(childCtx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(childCtx, span))
-
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-	} else {
-		time.Sleep(3 * time.Millisecond) // artificial span increase
-	}
-
-	return nil
-}
-
-// check whether we have depelted the ink
-func inkWell(ctx context.Context, tracer trace.Tracer) error {
-	childCtx, span := tracer.Start(ctx, "InkWell")
-	defer span.End()
-
-	// Whether to trip (between 0 and 1)
-	tripValue := rand.Float64()
-	// The threshold to trip the grease grate:
-	// not below 0.9, increasing probablility from 0.9-1 and always above
-	tripThreshold := float64(inkDepletion-90) / 10
-
-	logger.DebugContext(childCtx, fmt.Sprintf("inkDepletion %d - tripThreshold %f - tripValue %f", inkDepletion, tripThreshold, tripValue))
-
-	if tripValue < tripThreshold {
-		// this is a serious failure
-		err := errors.New("Ink Well running dry 🐙")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-
-		logger.ErrorContext(childCtx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(childCtx, span))
-
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-	} else {
-		time.Sleep(3 * time.Millisecond) // artificial span increase
-	}
-
-	return nil
-}
-
 // create the telegram to be sent
 func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clockResponseData types.ClockReading, useClock bool, requestId string) (types.Telegram, error) {
 	ctx, span := tracer.Start(ctx, "ScribeStudy")
 	defer span.End()
 
-	logger.DebugContext(ctx, "Scribe at work 🖊️")
+	o11y.Logger.DebugContext(ctx, "Scribe at work 🖊️")
 
 	nodeName, err := os.Hostname()
 	if err != nil {
@@ -248,7 +97,7 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clock
 
 	if scribeErrorChance < 0.01 { // very rare super long delay
 		span.AddEvent("Pan search")
-		logger.WarnContext(ctx, "Scribe dropped the pen 🔍!!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+		o11y.Logger.WarnContext(ctx, "Scribe dropped the pen 🔍!!", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
 		time.Sleep(3 * time.Second) // uppss...
 	} else if scribeErrorChance > 0.99 { // somestimes it can't wait
 		span.AddEvent("Break time")
@@ -256,7 +105,7 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clock
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 
-		logger.ErrorContext(ctx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+		o11y.Logger.ErrorContext(ctx, err.Error(), o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
 
 		responseTelegram.Message = "The time is not available at this moment!!"
 		return responseTelegram, fiber.NewError(fiber.StatusTeapot, err.Error())
@@ -266,7 +115,7 @@ func scribeStudy(ctx context.Context, tracer trace.Tracer, appName string, clock
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 
-		logger.ErrorContext(ctx, err.Error(), loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+		o11y.Logger.ErrorContext(ctx, err.Error(), o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
 
 		responseTelegram.Message = "The time is not available at this moment!!"
 		return responseTelegram, fiber.NewError(fiber.StatusServiceUnavailable, err.Error())
@@ -309,7 +158,7 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	_, span := tracer.Start(ctx, "CourteousCourier")
 	defer span.End()
 
-	logger.DebugContext(ctx, "Courier checking "+clock+" 🐦", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+	o11y.Logger.DebugContext(ctx, "Courier checking "+clock+" 🐦", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", clock+"/timestamp", nil)
 
@@ -320,7 +169,7 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	resp, err := client.Do(req)
 	if err != nil {
 		span.RecordError(err)
-		logger.ErrorContext(ctx, "Error checking clock!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+		o11y.Logger.ErrorContext(ctx, "Error checking clock!", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
 		ClockResponseData = types.ClockReading{
 			TimeReading: "Error checking clock!",
 			ClockName:   "unknown",
@@ -333,7 +182,7 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	responseData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		span.RecordError(err)
-		logger.ErrorContext(ctx, err.Error())
+		o11y.Logger.ErrorContext(ctx, err.Error())
 		ClockResponseData = types.ClockReading{
 			TimeReading: err.Error(),
 			ClockName:   "unknown",
@@ -345,109 +194,14 @@ func courteousCourier(ctx context.Context, tracer trace.Tracer, client *http.Cli
 	return nil, ClockResponseData
 }
 
-// set up metrics in both OTEL and Proemtheus
-func initGenteelGauges(appName string, commonAttribs []attribute.KeyValue) error {
-	meterProvider := otel.GetMeterProvider()
-	meter := meterProvider.Meter(appName)
-
-	// register the OTEL metrics
-	greaseBuildupGaugeOtel, _ = meter.Int64ObservableGauge(
-		"genteelbeacon_greasebuildup",
-		metric.WithDescription("The Genteel Beacon's current grease buildup"),
-	)
-	inkDepletionGaugeOtel, _ = meter.Int64ObservableGauge(
-		"genteelbeacon_inkdepletion",
-		metric.WithDescription("The Genteel Beacon's current ink depletion"),
-	)
-
-	promLabels := make(prometheus.Labels)
-	for _, attr := range commonAttribs {
-		promLabels[string(attr.Key)] = attr.Value.AsString()
-	}
-
-	// register the Prometheus metrics
-	greaseBuildupGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
-		Name:        "genteelbeacon_greasebuildup_p",
-		Help:        "The Genteel Beacon's current grease buidlup",
-		ConstLabels: promLabels,
-	})
-	inkDepletionGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
-		Name:        "genteelbeacon_inkdepletion_p",
-		Help:        "The Genteel Beacon's current ink depletion",
-		ConstLabels: promLabels,
-	})
-
-	// OTEL sending as callback on meter activity (from the channel handlers)
-	var err error = nil
-	_, err = meter.RegisterCallback(
-		func(ctx context.Context, observer metric.Observer) error {
-			// return the global value
-			observer.ObserveInt64(greaseBuildupGaugeOtel, greaseBuildup, metric.WithAttributes(commonAttribs...))
-			return nil
-		}, greaseBuildupGaugeOtel)
-
-	if err != nil {
-		log.Fatalf("Failed to register callback: %v", err)
-	}
-	_, err = meter.RegisterCallback(
-		func(ctx context.Context, observer metric.Observer) error {
-			// return the global value
-			observer.ObserveInt64(inkDepletionGaugeOtel, inkDepletion, metric.WithAttributes(commonAttribs...))
-			return nil
-		}, inkDepletionGaugeOtel)
-
-	if err != nil {
-		log.Fatalf("Failed to register callback: %v", err)
-	}
-	return err
-}
-
 func main() {
-	// our name and role
-	appName := getEnv("GENTEEL_NAME", "Genteel Beacon")
-	genteelRole := getEnv("GENTEEL_ROLE", "Default")
-	nodeName, err := os.Hostname()
-	if err != nil {
-		nodeName = "unknown_host"
-	}
-	greaseChan = make(chan int64)
-	inkChan = make(chan int64)
-
-	// manage the grease and ink
-	go func() {
-		for {
-			greaseChange := <-greaseChan
-			if greaseChange == -1 && greaseBuildup > 0 {
-				greaseBuildup--
-				greaseBuildupGaugeProm.Dec()
-			} else if greaseChange == 1 && rand.IntN(100) < 50 {
-				greaseBuildup++
-				greaseBuildupGaugeProm.Inc()
-			}
-		}
-	}()
-	go func() {
-		for {
-			inkChange := <-inkChan
-			if inkChange == -1 && inkDepletion > 0 {
-				inkDepletion--
-				inkDepletionGaugeProm.Dec()
-			} else if inkChange == 1 {
-				inkDepletion++
-				inkDepletionGaugeProm.Inc()
-			}
-		}
-	}()
-
+	// initialize ink and grease channels
+	services.InitInkGreaseChannels()
+	// monitor the ink and grease
+	services.StartInkMonitor()
+	services.StartGreaseMonitor()
 	// refill ink and clean grease
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			greaseChan <- -1
-			inkChan <- -1
-		}
-	}()
+	services.StartInkGreaseTimers()
 
 	app := fiber.New()
 	appInt := fiber.New()
@@ -458,7 +212,7 @@ func main() {
 	// healthcheck before any tracing/logging/metrics and on internal port
 	appInt.Use(healthcheck.New(healthcheck.Config{
 		LivenessProbe: func(c *fiber.Ctx) bool {
-			if genteelRole == "agitator" {
+			if config.GenteelRole == "agitator" {
 				// let's agitate
 				genteelAgitation, err := strconv.Atoi(getEnv("GENTEEL_AGITATION", "0"))
 				if err != nil {
@@ -486,15 +240,16 @@ func main() {
 
 	// common attributes for all OTEL data
 	commonAttribs := []attribute.KeyValue{
-		semconv.ServiceNameKey.String(strings.ToLower(strings.ReplaceAll(appName, " ", ""))),
+		semconv.ServiceNameKey.String(strings.ToLower(strings.ReplaceAll(config.AppName, " ", ""))),
+		semconv.ServiceVersionKey.String(buildVersion),
 		semconv.ServiceInstanceIDKey.String(uuid.New().String()),
-		attribute.String("hostname", nodeName),
-		attribute.String("genteelrole", genteelRole),
+		attribute.String("hostname", config.NodeName),
+		attribute.String("genteelrole", config.GenteelRole),
 	}
 
 	// we use both prometheus and OTEL
-	initGenteelGauges(appName, commonAttribs)
-	prometheus := fiberprometheus.NewWithDefaultRegistry(appName)
+	o11y.InitGenteelGauges(config.AppName, commonAttribs, &greaseBuildup, &inkDepletion)
+	prometheus := fiberprometheus.NewWithDefaultRegistry(config.AppName)
 	prometheus.RegisterAt(appInt, "/metrics")
 	app.Use(prometheus.Middleware)
 	app.Use(otelfiber.Middleware())
@@ -508,7 +263,7 @@ func main() {
 	otlphttpEndpoint, otlphttpOk := os.LookupEnv("OTLPHTTP_ENDPOINT")
 	otlphttpTracesEndpoint, otlphttpTracesOk := os.LookupEnv("OTLPHTTP_TRACES_ENDPOINT")
 	if otlphttpTracesOk {
-		tp, err := initTracer(otlphttpTracesEndpoint, commonAttribs)
+		tp, err := o11y.InitTracer(otlphttpTracesEndpoint, commonAttribs)
 		if err != nil {
 			slog.Error("Can't send traces")
 		}
@@ -517,21 +272,21 @@ func main() {
 		}()
 		slog.InfoContext(context.Background(), "Sending traces to "+otlphttpTracesEndpoint)
 	} else if otlphttpOk {
-		tp, err := initTracer(otlphttpEndpoint, commonAttribs)
+		tp, err := o11y.InitTracer(otlphttpEndpoint, commonAttribs)
 		if err != nil {
 			slog.Error("Can't send traces")
 		}
 		defer func() {
 			_ = tp.Shutdown(context.Background())
 		}()
-		mp, err := initMeter(otlphttpEndpoint, commonAttribs)
+		mp, err := o11y.InitMeter(otlphttpEndpoint, commonAttribs)
 		if err != nil {
 			log.Fatal("Can't send metrics")
 		}
 		defer func() {
 			_ = mp.Shutdown(context.Background())
 		}()
-		lp, err := initLogger(otlphttpEndpoint, commonAttribs)
+		lp, err := o11y.InitOtelLogger(otlphttpEndpoint, commonAttribs)
 		if err != nil {
 			log.Fatal("Can't send logs")
 		}
@@ -544,21 +299,7 @@ func main() {
 	}
 	// set up the logging with fanout to both stdout and (optionally) OTEL
 	_, jsonLogging := os.LookupEnv("JSONLOGGING")
-	if jsonLogging {
-		logger = slog.New(
-			slogmulti.Fanout(
-				otelslog.NewLogger(appName).Handler(),
-				slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}),
-			),
-		)
-	} else {
-		logger = slog.New(
-			slogmulti.Fanout(
-				otelslog.NewLogger(appName).Handler(),
-				slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}),
-			),
-		)
-	}
+	o11y.CreateLogger(config.AppName, jsonLogging)
 	// always log traceID, spanID and requestID
 	loggerConfig := slogfiber.Config{
 		WithSpanID:         true,
@@ -567,7 +308,7 @@ func main() {
 		WithRequestHeader:  true,
 		WithResponseHeader: true,
 	}
-	app.Use(slogfiber.NewWithConfig(logger, loggerConfig))
+	app.Use(slogfiber.NewWithConfig(o11y.Logger, loggerConfig))
 	app.Use(recover.New())
 
 	// we need to make calls out
@@ -576,10 +317,10 @@ func main() {
 	}
 
 	// start tracing now
-	tracer = otel.Tracer(appName)
+	tracer = otel.Tracer(config.AppName)
 
-	if genteelRole == "gearsmith" {
-		RunGearsmith()
+	if config.GenteelRole == "gearsmith" {
+		gearsmith.RunGearsmith()
 	} else {
 
 		app.Get("/timestamp", func(c *fiber.Ctx) error {
@@ -588,16 +329,16 @@ func main() {
 			defer span.End()
 
 			// the binary shall usually one serve a single purpose
-			if genteelRole != "clock" && genteelRole != "schildwaechter" {
+			if config.GenteelRole != "clock" && config.GenteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
 
 			// check whether we have accumulated too much grease
-			greaseErr := greaseGrate(ctx, tracer)
+			greaseErr := services.GreaseGrate(ctx, tracer)
 			if greaseErr != nil {
 				return greaseErr
 			}
-			greaseChan <- 1
+			services.GreaseChan <- 1
 
 			// prepare the answer with hostname and current time
 			nodeName, err := os.Hostname()
@@ -619,16 +360,16 @@ func main() {
 			defer span.End()
 
 			// the binary shall usually only serve a single purpose
-			if genteelRole != "telegraphist" && genteelRole != "schildwaechter" {
+			if config.GenteelRole != "telegraphist" && config.GenteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
 
 			// test whether we still have ink
-			inkErr := inkWell(ctx, tracer)
+			inkErr := services.InkWell(ctx, tracer)
 			if inkErr != nil {
 				return inkErr
 			}
-			inkChan <- 1
+			services.InkChan <- 1
 
 			// check whether we use a clock
 			var ClockResponseData types.ClockReading
@@ -639,7 +380,7 @@ func main() {
 				clockResponseError, ClockResponseData = courteousCourier(ctx, tracer, client, clock)
 			} else {
 				// return simplified answer
-				logger.DebugContext(ctx, "No clock available")
+				o11y.Logger.DebugContext(ctx, "No clock available")
 				ClockResponseData = types.ClockReading{
 					TimeReading: time.Now().Format("2006-01-02"),
 					ClockName:   "local",
@@ -650,7 +391,7 @@ func main() {
 			}
 
 			// actually create the message
-			scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, appName, ClockResponseData, useClock, slogfiber.GetRequestIDFromContext(c.Context()))
+			scribeStudyMessage, scribeErr := scribeStudy(ctx, tracer, config.AppName, ClockResponseData, useClock, slogfiber.GetRequestIDFromContext(c.Context()))
 
 			if scribeErr != nil {
 				return scribeErr
@@ -658,7 +399,7 @@ func main() {
 
 			// respond with appropriate mimetype
 			offer := c.Accepts(fiber.MIMETextPlain, fiber.MIMETextHTML, fiber.MIMEApplicationJSON)
-			logger.DebugContext(ctx, "Offer: "+offer)
+			o11y.Logger.DebugContext(ctx, "Offer: "+offer)
 			if offer == "text/html" {
 				c.Set("Content-type", "text/html")
 				return templates.HtmlTelegram(scribeStudyMessage).Render(c.Context(), c.Response().BodyWriter())
@@ -679,10 +420,10 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 			// the binary shall usually only serve a single purpose
-			if genteelRole != "lightkeeper" && genteelRole != "schildwaechter" {
+			if config.GenteelRole != "lightkeeper" && config.GenteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
-			logger.InfoContext(ctx, "Emanating local information with request headers", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+			o11y.Logger.InfoContext(ctx, "Emanating local information with request headers", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
 			headers := make(map[string]string)
 			c.Request().Header.VisitAll(func(key, value []byte) {
 				headers[string(key)] = string(value)
@@ -698,7 +439,7 @@ func main() {
 				}
 			}
 			// get calling card
-			drawingRoomResponse, _ := drawingRoom(ctx, tracer, appName, slogfiber.GetRequestIDFromContext(c.Context()))
+			drawingRoomResponse, _ := drawingRoom(ctx, tracer, config.AppName, slogfiber.GetRequestIDFromContext(c.Context()))
 			tmpl, err := template.New("callingCardText").Parse("»{{ .Salutation }}« 👩🏻 {{ .Attendant }} 💌 Sincerely, {{ .Signature }}\n✉️ Card version {{ .CardVersion }} 🙋 {{ .Identifier }}")
 			if err != nil {
 				panic(err)
@@ -711,7 +452,7 @@ func main() {
 			}
 			// respond with appropriate mimetype
 			offer := c.Accepts(fiber.MIMETextPlain, fiber.MIMETextHTML, fiber.MIMEApplicationJSON)
-			logger.DebugContext(ctx, "Offer: "+offer)
+			o11y.Logger.DebugContext(ctx, "Offer: "+offer)
 			if offer == "application/json" {
 				return c.Status(http.StatusOK).JSON(result)
 			}
@@ -723,16 +464,16 @@ func main() {
 			span.SetAttributes(attribute.String("RequestID", slogfiber.GetRequestIDFromContext(c.Context())))
 			defer span.End()
 			// the binary shall usually only serve a single purpose
-			if genteelRole == "agitator" {
+			if config.GenteelRole == "agitator" {
 				// this is a bit brutal
-				logger.ErrorContext(ctx, "Disrupt!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+				o11y.Logger.ErrorContext(ctx, "Disrupt!", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
 				os.Exit(133)
 			}
-			if genteelRole != "lightkeeper" && genteelRole != "schildwaechter" {
+			if config.GenteelRole != "lightkeeper" && config.GenteelRole != "schildwaechter" {
 				return fiber.NewError(fiber.StatusBadRequest, "Not my job!")
 			}
 			// causing an error on purpose
-			logger.ErrorContext(ctx, "Calamity has been invoked!", loggerTraceAttr(ctx, span), loggerSpanAttr(ctx, span))
+			o11y.Logger.ErrorContext(ctx, "Calamity has been invoked!", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "Oh, no! A most dreadful calamity has occured! 💥"})
 		})
 
