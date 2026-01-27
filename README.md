@@ -16,14 +16,14 @@ When building manually, provide the version or build timestamp
 
 ```shell
 go tool templ generate ./internal/templates
-go build -ldflags "-X main.buildVersion=$(cat VERSION)" ./cmd/genteelbeacon
+go build -ldflags "-X github.com/schildwaechter/genteelbeacon/internal/config.BuildVersion=$(cat VERSION)" ./cmd/genteelbeacon
 ```
 
 or
 
 ```shell
 go tool templ generate ./internal/templates
-go build -ldflags "-X main.buildVersion=$(date '+%s')" ./cmd/genteelbeacon
+go build -ldflags "-X github.com/schildwaechter/genteelbeacon/internal/config.BuildVersion=$(date '+%s')" ./cmd/genteelbeacon
 ```
 
 ## Using

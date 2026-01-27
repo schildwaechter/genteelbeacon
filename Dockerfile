@@ -9,7 +9,7 @@ COPY internal /go/src/genteelbeacon/internal
 COPY go.* /go/src/genteelbeacon/
 RUN go mod download
 RUN go tool templ generate ./internal/templates
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags "-X main.buildVersion=$(cat VERSION)" -o genteelbeacon ./cmd/genteelbeacon
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags "-X github.com/schildwaechter/genteelbeacon/internal/config.BuildVersion=$(cat VERSION)" -o genteelbeacon ./cmd/genteelbeacon
 
 # package the binary into a container
 FROM scratch

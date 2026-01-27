@@ -1,5 +1,5 @@
 // Schildwächter's Genteel Beacon
-// Copyright Carsten Thiel 2025
+// Copyright Carsten Thiel 2025-2026
 //
 // SPDX-Identifier: Apache-2.0
 
@@ -8,9 +8,10 @@ package config
 import "os"
 
 var (
-	AppName     string
-	GenteelRole string
-	NodeName    string
+	AppName      string
+	GenteelRole  string
+	NodeName     string
+	BuildVersion string = "0.0.0" // should be overridden at compile time with -ldflags
 )
 
 // GetEnv gets an environment variable with a default value

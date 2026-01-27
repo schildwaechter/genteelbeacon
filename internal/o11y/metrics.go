@@ -1,5 +1,5 @@
-// Schildw√§chter's Genteel Beacon
-// Copyright Carsten Thiel 2025
+// Schildwächter's Genteel Beacon
+// Copyright Carsten Thiel 2025-2026
 //
 // SPDX-Identifier: Apache-2.0
 
@@ -24,7 +24,7 @@ var (
 )
 
 // InitGenteelGauges sets up metrics in both OTEL and Proemtheus
-func InitGenteelGauges(appName string, commonAttribs []attribute.KeyValue, greaseBuildup *int64, inkDepletion *int64) error {
+func InitGenteelGauges(appName string, commonAttribs []attribute.KeyValue, greaseGetter func() int64, inkGetter func() int64) error {
 	meterProvider := otel.GetMeterProvider()
 	meter := meterProvider.Meter(appName)
 
@@ -59,8 +59,8 @@ func InitGenteelGauges(appName string, commonAttribs []attribute.KeyValue, greas
 	var err error = nil
 	_, err = meter.RegisterCallback(
 		func(ctx context.Context, observer metric.Observer) error {
-			// return the global value
-			observer.ObserveInt64(GreaseBuildupGaugeOtel, *greaseBuildup, metric.WithAttributes(commonAttribs...))
+			// return the current value using the getter function
+			observer.ObserveInt64(GreaseBuildupGaugeOtel, greaseGetter(), metric.WithAttributes(commonAttribs...))
 			return nil
 		}, GreaseBuildupGaugeOtel)
 
@@ -69,8 +69,8 @@ func InitGenteelGauges(appName string, commonAttribs []attribute.KeyValue, greas
 	}
 	_, err = meter.RegisterCallback(
 		func(ctx context.Context, observer metric.Observer) error {
-			// return the global value
-			observer.ObserveInt64(InkDepletionGaugeOtel, *inkDepletion, metric.WithAttributes(commonAttribs...))
+			// return the current value using the getter function
+			observer.ObserveInt64(InkDepletionGaugeOtel, inkGetter(), metric.WithAttributes(commonAttribs...))
 			return nil
 		}, InkDepletionGaugeOtel)
 

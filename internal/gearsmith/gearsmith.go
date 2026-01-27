@@ -1,5 +1,5 @@
-// Genteel Beacon - Grumpy Gearsmith
-// Copyright Carsten Thiel 2025
+// Schildwächter's Genteel Beacon
+// Copyright Carsten Thiel 2025-2026
 //
 // SPDX-Identifier: Apache-2.0
 

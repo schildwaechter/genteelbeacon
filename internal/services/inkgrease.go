@@ -1,5 +1,5 @@
 // Schildwächter's Genteel Beacon
-// Copyright Carsten Thiel 2025
+// Copyright Carsten Thiel 2025-2026
 //
 // SPDX-Identifier: Apache-2.0
 
@@ -10,22 +10,34 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"sync/atomic"
 	"time"
 
+	"github.com/schildwaechter/genteelbeacon/internal/config"
 	"github.com/schildwaechter/genteelbeacon/internal/o11y"
 
 	"github.com/gofiber/fiber/v2"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 )
 
 var (
-	// grease and ink tracking
-	GreaseBuildup int64 = 0
-	InkDepletion  int64 = 0
+	// grease and ink tracking - using atomic for thread-safe access
+	greaseBuildup atomic.Int64
+	inkDepletion  atomic.Int64
 	GreaseChan    chan int64
 	InkChan       chan int64
 )
+
+// GetGreaseBuildup returns the current grease buildup value in a thread-safe manner
+func GetGreaseBuildup() int64 {
+	return greaseBuildup.Load()
+}
+
+// GetInkDepletion returns the current ink depletion value in a thread-safe manner
+func GetInkDepletion() int64 {
+	return inkDepletion.Load()
+}
 
 // InitInkGreaseChannels initializes the grease and ink channels
 func InitInkGreaseChannels() {
@@ -38,11 +50,11 @@ func StartGreaseMonitor() {
 	go func() {
 		for {
 			greaseChange := <-GreaseChan
-			if greaseChange == -1 && GreaseBuildup > 0 {
-				GreaseBuildup--
+			if greaseChange == -1 && greaseBuildup.Load() > 0 {
+				greaseBuildup.Add(-1)
 				o11y.GreaseBuildupGaugeProm.Dec()
 			} else if greaseChange == 1 && rand.IntN(100) < 50 {
-				GreaseBuildup++
+				greaseBuildup.Add(1)
 				o11y.GreaseBuildupGaugeProm.Inc()
 			}
 		}
@@ -54,11 +66,11 @@ func StartInkMonitor() {
 	go func() {
 		for {
 			inkChange := <-InkChan
-			if inkChange == -1 && InkDepletion > 0 {
-				InkDepletion--
+			if inkChange == -1 && inkDepletion.Load() > 0 {
+				inkDepletion.Add(-1)
 				o11y.InkDepletionGaugeProm.Dec()
 			} else if inkChange == 1 {
-				InkDepletion++
+				inkDepletion.Add(1)
 				o11y.InkDepletionGaugeProm.Inc()
 			}
 		}
@@ -78,17 +90,18 @@ func StartInkGreaseTimers() {
 }
 
 // GreaseGrate checks whether grease buildup is too much
-func GreaseGrate(ctx context.Context, tracer trace.Tracer) error {
-	childCtx, span := tracer.Start(ctx, "GreaseGrate")
+func GreaseGrate(ctx context.Context) error {
+	childCtx, span := otel.Tracer(config.AppName).Start(ctx, "GreaseGrate")
 	defer span.End()
 
 	// Whether to trip (between 0 and 1)
 	tripValue := rand.Float64()
 	// The threshold to trip the grease grate:
 	// not below 0.9, increasing probablility from 0.9-1 and always above
-	tripThreshold := float64(GreaseBuildup-90) / 10
+	currentGreaseBuildup := greaseBuildup.Load()
+	tripThreshold := float64(currentGreaseBuildup-90) / 10
 
-	o11y.Logger.DebugContext(childCtx, fmt.Sprintf("greaseBuildup %d - tripThreshold %f - tripValue %f", GreaseBuildup, tripThreshold, tripValue))
+	o11y.Logger.DebugContext(childCtx, fmt.Sprintf("greaseBuildup %d - tripThreshold %f - tripValue %f", currentGreaseBuildup, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
 		// this is a serious failure
@@ -107,17 +120,18 @@ func GreaseGrate(ctx context.Context, tracer trace.Tracer) error {
 }
 
 // InkWell checks whether we have depleted the ink
-func InkWell(ctx context.Context, tracer trace.Tracer) error {
-	childCtx, span := tracer.Start(ctx, "InkWell")
+func InkWell(ctx context.Context) error {
+	childCtx, span := otel.Tracer(config.AppName).Start(ctx, "InkWell")
 	defer span.End()
 
 	// Whether to trip (between 0 and 1)
 	tripValue := rand.Float64()
 	// The threshold to trip the grease grate:
 	// not below 0.9, increasing probablility from 0.9-1 and always above
-	tripThreshold := float64(InkDepletion-90) / 10
+	currentInkDepletion := inkDepletion.Load()
+	tripThreshold := float64(currentInkDepletion-90) / 10
 
-	o11y.Logger.DebugContext(childCtx, fmt.Sprintf("inkDepletion %d - tripThreshold %f - tripValue %f", InkDepletion, tripThreshold, tripValue))
+	o11y.Logger.DebugContext(childCtx, fmt.Sprintf("inkDepletion %d - tripThreshold %f - tripValue %f", currentInkDepletion, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
 		// this is a serious failure
