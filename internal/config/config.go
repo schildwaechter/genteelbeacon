@@ -14,6 +14,17 @@ var (
 	BuildVersion string = "0.0.0" // should be overridden at compile time with -ldflags
 )
 
+// Service behavior constants
+const (
+	// Clerk error probabilities
+	PenDropChance    = 0.01
+	BreakChance      = 0.02
+	IndisposedChance = 0.04
+
+	// Threshold to start tripping ink/grease errors, integer percentage
+	TripThreshold = 90
+)
+
 // GetEnv gets an environment variable with a default value
 func GetEnv(name string, defaultValue string) string {
 	value, exists := os.LookupEnv(name)

@@ -53,7 +53,8 @@ func StartGreaseMonitor() {
 			if greaseChange == -1 && greaseBuildup.Load() > 0 {
 				greaseBuildup.Add(-1)
 				o11y.GreaseBuildupGaugeProm.Dec()
-			} else if greaseChange == 1 && rand.IntN(100) < 50 {
+			} else if greaseChange == 1 && rand.IntN(100) < 40 {
+				// we only increase grease buildup 40% to simulate different impact
 				greaseBuildup.Add(1)
 				o11y.GreaseBuildupGaugeProm.Inc()
 			}
@@ -97,15 +98,15 @@ func GreaseGrate(ctx context.Context) error {
 	// Whether to trip (between 0 and 1)
 	tripValue := rand.Float64()
 	// The threshold to trip the grease grate:
-	// not below 0.9, increasing probablility from 0.9-1 and always above
+	// not below 0.9, increasing probability from 0.9-1 and always above
 	currentGreaseBuildup := greaseBuildup.Load()
-	tripThreshold := float64(currentGreaseBuildup-90) / 10
+	tripThreshold := float64(currentGreaseBuildup-config.TripThreshold) / 10
 
 	o11y.Logger.DebugContext(childCtx, fmt.Sprintf("greaseBuildup %d - tripThreshold %f - tripValue %f", currentGreaseBuildup, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
 		// this is a serious failure
-		err := errors.New("Grease Grate clogged 💀")
+		err := errors.New("grease grate clogged 💀")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 
@@ -127,15 +128,15 @@ func InkWell(ctx context.Context) error {
 	// Whether to trip (between 0 and 1)
 	tripValue := rand.Float64()
 	// The threshold to trip the grease grate:
-	// not below 0.9, increasing probablility from 0.9-1 and always above
+	// not below 0.9, increasing probability from 0.9-1 and always above
 	currentInkDepletion := inkDepletion.Load()
-	tripThreshold := float64(currentInkDepletion-90) / 10
+	tripThreshold := float64(currentInkDepletion-config.TripThreshold) / 10
 
 	o11y.Logger.DebugContext(childCtx, fmt.Sprintf("inkDepletion %d - tripThreshold %f - tripValue %f", currentInkDepletion, tripThreshold, tripValue))
 
 	if tripValue < tripThreshold {
 		// this is a serious failure
-		err := errors.New("Ink Well running dry 🐙")
+		err := errors.New("ink well running dry 🐙")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 

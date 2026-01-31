@@ -9,13 +9,15 @@ import (
 	"context"
 	"math/rand/v2"
 	"os"
+	"time"
 
 	"github.com/schildwaechter/genteelbeacon/internal/config"
+	"github.com/schildwaechter/genteelbeacon/internal/o11y"
 	"github.com/schildwaechter/genteelbeacon/internal/types"
 	"go.opentelemetry.io/otel"
 )
 
-func FocusedScribe(ctx context.Context, requestId string) (types.CallingCard, error) {
+func FocusedScribe(ctx context.Context, requestID string) (types.CallingCard, error) {
 	ctx, span := otel.Tracer(config.AppName).Start(ctx, "FocusedScribe")
 	defer span.End()
 
@@ -24,6 +26,17 @@ func FocusedScribe(ctx context.Context, requestId string) (types.CallingCard, er
 	if err != nil {
 		nodeName = "unknown host"
 	}
+
+	scribeRandErrChance := rand.Float64()
+	if scribeRandErrChance < config.PenDropChance { // very rare super long delay
+		span.AddEvent("Pen search")
+		o11y.Logger.WarnContext(ctx, "Scribe dropped the pen 🔍!!", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
+		time.Sleep(3 * time.Second) // uppss...
+	} else {
+		time.Sleep(time.Duration(rand.IntN(80)+50) * time.Millisecond) // normal artificial span increase
+		span.AddEvent("Message ready")
+	}
+
 	nodOptions := []string{
 		"A pleasure!", "Charmed!", "Delighted!", "Charmed, I'm sure!",
 		"Quite so!", "Splendid!", "How lovely!", "My compliments!",
@@ -36,7 +49,7 @@ func FocusedScribe(ctx context.Context, requestId string) (types.CallingCard, er
 	responseCallingCard.Salutation = randomNod
 	responseCallingCard.CardVersion = config.BuildVersion
 	responseCallingCard.Signature = nodeName
-	responseCallingCard.Identifier = requestId
+	responseCallingCard.Identifier = requestID
 
 	return responseCallingCard, nil
 }

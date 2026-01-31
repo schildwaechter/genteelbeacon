@@ -29,13 +29,23 @@ func NimbleCourier(ctx context.Context, clock string) (types.ClockReading, error
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	}
 
-	o11y.Logger.DebugContext(ctx, "Courier checking "+clock+" üê¶", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
+	o11y.Logger.DebugContext(ctx, "Courier checking "+clock+" 🐦", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
+
+	var clockResponseData types.ClockReading
 
 	req, err := http.NewRequestWithContext(ctx, "GET", clock+"/timestamp", nil)
+	if err != nil {
+		span.RecordError(err)
+		o11y.Logger.ErrorContext(ctx, "Error creating clock request!", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
+		clockResponseData = types.ClockReading{
+			TimeReading: "Error creating clock request!",
+			ClockName:   "unknown",
+		}
+		return clockResponseData, err
+	}
 
 	// Inject TraceParent to Context
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-	var clockResponseData types.ClockReading
 
 	resp, err := client.Do(req)
 	if err != nil {
