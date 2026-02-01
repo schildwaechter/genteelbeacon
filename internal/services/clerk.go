@@ -51,9 +51,9 @@ func DiligentClerk(ctx context.Context, clockResponseData types.ClockReading, us
 		responseTelegram.ClockReference = "unavailable"
 	}
 
-	if clerkRandErrChance1 < config.BreakChance { // somestimes it can't wait
+	if clerkRandErrChance1 < config.GetChaosChance("breakChance") { // somestimes it can't wait
 		span.AddEvent("Break time")
-		err := errors.New("Clerk seems to be having a break 🫖")
+		err := errors.New("clerk seems to be having a break 🫖")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 
@@ -61,9 +61,9 @@ func DiligentClerk(ctx context.Context, clockResponseData types.ClockReading, us
 
 		responseTelegram.Message = "The time is not available at this moment!!"
 		return responseTelegram, fiber.NewError(fiber.StatusTeapot, err.Error())
-	} else if clerkRandErrChance2 < config.IndisposedChance { // oh dear (if we haven't tripped before)
+	} else if clerkRandErrChance2 < config.GetChaosChance("indisposedChance") { // oh dear (if we haven't tripped before)
 		span.AddEvent("Urgent need")
-		err := errors.New("Clerk seems to be indisposed 💩")
+		err := errors.New("clerk seems to be indisposed 💩")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 

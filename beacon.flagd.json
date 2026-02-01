@@ -1,0 +1,43 @@
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "chaosMode": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true,
+        "off": false
+      },
+      "defaultVariant": "on"
+    },
+    "penDropChance": {
+      "state": "ENABLED",
+      "variants": {
+        "none": 0.0,
+        "low": 0.05,
+        "high": 0.3,
+        "crazy": 0.99
+      },
+      "defaultVariant": "low"
+    },
+    "breakChance": {
+      "state": "ENABLED",
+      "variants": {
+        "none": 0.0,
+        "low": 0.02,
+        "high": 0.15,
+        "crazy": 0.99
+      },
+      "defaultVariant": "low"
+    },
+    "indisposedChance": {
+      "state": "ENABLED",
+      "variants": {
+        "none": 0.0,
+        "low": 0.03,
+        "high": 0.2,
+        "crazy": 0.99
+      },
+      "defaultVariant": "low"
+    }
+  }
+}

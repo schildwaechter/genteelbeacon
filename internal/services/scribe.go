@@ -28,7 +28,7 @@ func FocusedScribe(ctx context.Context, requestID string) (types.CallingCard, er
 	}
 
 	scribeRandErrChance := rand.Float64()
-	if scribeRandErrChance < config.PenDropChance { // very rare super long delay
+	if scribeRandErrChance < config.GetChaosChance("penDropChance") { // very rare super long delay
 		span.AddEvent("Pen search")
 		o11y.Logger.WarnContext(ctx, "Scribe dropped the pen 🔍!!", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
 		time.Sleep(3 * time.Second) // uppss...

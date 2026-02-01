@@ -36,6 +36,16 @@ There will always be an answer on
 curl http://localhost:1333
 ```
 
+### Chaos Mode
+
+We use flagd to control the chaos mode.
+Make sure to run accordingly, e.g.
+
+```shell
+docker run --rm -it --name flagd -p 8013:8013 -v $(pwd):/etc/flagd \
+  ghcr.io/open-feature/flagd:latest start --uri file:./etc/flagd/beacon.flagd.json
+```
+
 ### Telegraphist
 
 To retrieve the telegram as `html`, `json` or plain text, call with Accept-header
@@ -61,7 +71,7 @@ Then retrieve the echo of the request-headers, together with some execution envi
 curl http://localhost:1333/emission
 ```
 
-It's also possible to directly trigger and error.
+It's also possible to directly trigger an error.
 
 ```shell
 curl http://localhost:1333/calamity
@@ -91,6 +101,7 @@ There are options to send traces to an OpenTelemetry Endpoint, log in JSON and m
 * `GENTEEL_NAME` -- The name the application identifies as
 * `GENTEEL_ROLE` -- The role to assume, possible values are `telegraphist`, `clock`, `gearsmith`, `lightkeeper` and `agitator`
 * `GENTEEL_CLOCK` -- The address of the clock instance
+* `FLAGD_HOST` -- The hostname of the flagd service
 * `OTLPHTTP_ENDPOINT` -- OTLP/HTTP-Endpoint to send metrics, traces & logs to (no `http://`-prefix!)
 * `OTLPHTTP_TRACES_ENDPOINT` -- OTLP/HTTP-Endpoint to send traces to (no `http://`-prefix!) -- overrides full sending!
 * `JSONLOGGING` -- If set, will cause the logs to be emitted in JSON to `stdout`
