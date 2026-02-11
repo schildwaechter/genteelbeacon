@@ -1,7 +1,7 @@
 // Schildwächter's Genteel Beacon
 // Copyright Carsten Thiel 2025-2026
 //
-// SPDX-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 package main
 
@@ -35,6 +35,10 @@ import (
 )
 
 func main() {
+	if err := config.Initialize(); err != nil {
+		log.Fatal("Failed to initialize configuration: ", err)
+	}
+
 	// initialize ink and grease channels
 	services.InitInkGreaseChannels()
 	// monitor the ink and grease
@@ -93,10 +97,6 @@ func main() {
 	prometheus.RegisterAt(appInt, "/metrics")
 	app.Use(prometheus.Middleware)
 	app.Use(otelfiber.Middleware())
-
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendString("Genteel Beacon 🚨")
-	})
 
 	// configure sending OTEL if needed
 	// if it's not configured, everything just remains silent

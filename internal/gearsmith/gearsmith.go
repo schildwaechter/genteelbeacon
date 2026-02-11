@@ -1,7 +1,7 @@
 // Schildwächter's Genteel Beacon
 // Copyright Carsten Thiel 2025-2026
 //
-// SPDX-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 package gearsmith
 
@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/schildwaechter/genteelbeacon/internal/o11y"
@@ -35,11 +36,14 @@ type inkStat struct {
 	Average float64
 }
 
-var gearStats map[string]gearStat
-var inkStats map[string]inkStat
+var (
+	gearStats map[string]gearStat
+	inkStats  map[string]inkStat
+	statsLock sync.RWMutex // Concurrency lock
 
-var ErrNoNamespace = fmt.Errorf("Namespace not found")
-var nameSpace string
+	ErrNoNamespace = fmt.Errorf("namespace not found")
+	nameSpace      string
+)
 
 // GetNamespace is get the pod's namespace
 func GetNamespace() (string, error) {
@@ -76,7 +80,7 @@ func getBeacons(clientset *kubernetes.Clientset) ([]string, error) {
 func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64, int64, float64, error) {
 	pods, err := clientset.CoreV1().Pods(nameSpace).List(context.TODO(), metav1.ListOptions{LabelSelector: "genteelbeacon=" + beacon})
 	if err != nil {
-		o11y.Logger.Error("Eror getting pods for label genteelbeacon=" + beacon)
+		o11y.Logger.Error("Error getting pods for label genteelbeacon=" + beacon)
 		return 0, 0, 0, 0, err
 	}
 
@@ -87,15 +91,18 @@ func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64,
 	for _, pod := range pods.Items {
 		o11y.Logger.Debug("Querying " + pod.Name + " at IP " + pod.Status.PodIP)
 		req, err := http.NewRequest("GET", "http://"+pod.Status.PodIP+":1337/metrics", nil)
-		client := &http.Client{Timeout: 3 * time.Second}
+		if err != nil {
+			o11y.Logger.Warn("Can't create request for pod " + pod.Name + ". Error: " + err.Error())
+			continue // we just ignore this pod
+		}
 
+		client := &http.Client{Timeout: 3 * time.Second}
 		resp, err := client.Do(req)
 		if err != nil {
 			o11y.Logger.Warn("Can't reach pod " + pod.Name + ". Error: " + err.Error())
 			continue // we just ignore this pod
 		}
 
-		defer resp.Body.Close()
 		var greaseVal float64 = 0
 		var inkVal float64 = 0
 		responseScanner := bufio.NewScanner(resp.Body)
@@ -133,6 +140,7 @@ func calcValues(beacon string, clientset *kubernetes.Clientset) (int64, float64,
 				}
 			}
 		}
+		resp.Body.Close() // Closing explicitly after processing
 		o11y.Logger.Debug(fmt.Sprintf("Grease Buildup for "+pod.Name+" is %f\n", (greaseVal)) + fmt.Sprintf("Ink Depletion for "+pod.Name+" is %f\n", (inkVal)))
 	}
 
@@ -145,8 +153,10 @@ func statsServe(w http.ResponseWriter, r *http.Request) {
 		Gears    map[string]gearStat
 		Inkwells map[string]inkStat
 	}
-	o11y.Logger.Info("FHmm: %v", gearStats)
+	statsLock.RLock()
+	o11y.Logger.Info("Combined stats", "gears", gearStats, "inkwells", inkStats)
 	combinedStats := combinedStat{gearStats, inkStats}
+	statsLock.RUnlock()
 	jsonString, _ := json.Marshal(combinedStats)
 	fmt.Fprint(w, string(jsonString))
 }
@@ -163,6 +173,7 @@ func valueServe(w http.ResponseWriter, r *http.Request) {
 	}
 	// get the right sum
 	var returnSum float64 = 0
+	statsLock.RLock()
 	if r.PathValue("valuename") == "gearvalue" {
 		beaconGear := gearStats[beacon]
 		if beaconGear.Count == 0 {
@@ -178,6 +189,7 @@ func valueServe(w http.ResponseWriter, r *http.Request) {
 	} else {
 		returnSum = 0
 	}
+	statsLock.RUnlock()
 
 	// return data in expected format
 	// https://medium.com/swlh/building-your-own-custom-metrics-api-for-kubernetes-horizontal-pod-autoscaler-277473dea2c1
@@ -237,8 +249,10 @@ func setStats() {
 			if inkNumber != 0 {
 				inkAverage = inkSum / float64(inkNumber)
 			}
+			statsLock.Lock()
 			gearStats[element] = gearStat{gearNumber, gearSum, gearAverage}
 			inkStats[element] = inkStat{inkNumber, inkSum, inkAverage}
+			statsLock.Unlock()
 			o11y.Logger.Debug(fmt.Sprintf("Gear average for "+element+" is: %f\n", (gearAverage)))
 			o11y.Logger.Debug(fmt.Sprintf("Ink average for "+element+" is: %f\n", (inkAverage)))
 		}

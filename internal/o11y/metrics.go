@@ -1,7 +1,7 @@
 // Schildwächter's Genteel Beacon
 // Copyright Carsten Thiel 2025-2026
 //
-// SPDX-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 package o11y
 
@@ -23,7 +23,7 @@ var (
 	InkDepletionGaugeOtel  metric.Int64ObservableGauge
 )
 
-// InitGenteelGauges sets up metrics in both OTEL and Proemtheus
+// InitGenteelGauges sets up metrics in both OTEL and Prometheus
 func InitGenteelGauges(appName string, commonAttribs []attribute.KeyValue, greaseGetter func() int64, inkGetter func() int64) error {
 	meterProvider := otel.GetMeterProvider()
 	meter := meterProvider.Meter(appName)
@@ -46,7 +46,7 @@ func InitGenteelGauges(appName string, commonAttribs []attribute.KeyValue, greas
 	// register the Prometheus metrics
 	GreaseBuildupGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{
 		Name:        "genteelbeacon_greasebuildup_p",
-		Help:        "The Genteel Beacon's current grease buidlup",
+		Help:        "The Genteel Beacon's current grease buildup",
 		ConstLabels: promLabels,
 	})
 	InkDepletionGaugeProm = promauto.NewGauge(prometheus.GaugeOpts{

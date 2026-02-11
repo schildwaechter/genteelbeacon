@@ -1,7 +1,7 @@
 // Schildwächter's Genteel Beacon
 // Copyright Carsten Thiel 2025-2026
 //
-// SPDX-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 package handlers
 
@@ -200,5 +200,5 @@ func handleCalamity(c *fiber.Ctx) error {
 	}
 	// causing an error on purpose
 	o11y.Logger.ErrorContext(ctx, "Calamity has been invoked!", o11y.LoggerTraceAttr(ctx, span), o11y.LoggerSpanAttr(ctx, span))
-	return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "Oh, no! A most dreadful calamity has occured! 💥"})
+	return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"message": "Oh, no! A most dreadful calamity has occurred! 💥"})
 }
