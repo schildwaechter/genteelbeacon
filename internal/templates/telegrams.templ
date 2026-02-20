@@ -13,44 +13,87 @@ templ HtmlTelegram(telegram types.Telegram){
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{ telegram.Service}</title>
+    <title>{ telegram.Service }</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+    <link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.js" integrity="sha384-ezjq8118wdwdRMj+nX4bevEi+cDLTbhLAeFF688VK8tPDGeLUe0WoY2MZtSla72F" crossorigin="anonymous"></script>
     <style>
-        body,
-        html {
+        body, html {
             height: 100%;
+            width: 100%;
             margin: 0;
             display: flex;
             justify-content: center;
             align-items: center;
             background: #333;
+            flex-direction: column;
+            gap: 16px;
+        }
+        #telegram-container {
+            position: relative;
+            width: 1744px;
+            max-width: 100%;
+            aspect-ratio: 1744 / 608;
+            background-image: url('assets/telegram.jpg');
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+            container-type: inline-size;
+        }
+        .telegram-field {
+            position: absolute;
+            font-family: 'Special Elite', 'Courier New', monospace;
+            font-size: 1.15cqw;
+            color: #333;
+            white-space: nowrap;
+        }
+        #refresh-btn {
+            font-family: 'Special Elite', 'Courier New', monospace;
+            font-size: 16px;
+            padding: 8px 24px;
+            background: #d4c5a0;
+            border: 2px solid #8b7355;
+            color: #333;
+            cursor: pointer;
+        }
+        #refresh-btn:hover {
+            background: #c4b590;
+        }
+        .htmx-request #refresh-btn {
+            opacity: 0.5;
+            cursor: wait;
         }
     </style>
 </head>
 <body>
-    <canvas id="telegramCanvas"></canvas>
-    @templ.JSONScript("telegram", telegram)
+    <div id="telegram-container">
+        <span id="t-service" class="telegram-field" style="left: 58.4%; top: 45.9%;">{ "»" + telegram.Service + "«" }</span>
+        <span id="t-formversion" class="telegram-field" style="left: 79.4%; top: 45.9%;">{ telegram.FormVersion }</span>
+        <span id="t-message" class="telegram-field" style="left: 13%; top: 49.4%;">{ telegram.Message }</span>
+        <span id="t-emoji" class="telegram-field" style="left: 13%; top: 58.4%;">{ "emoji> " + telegram.Emoji }</span>
+        <span id="t-clockref" class="telegram-field" style="left: 13%; top: 67.4%;">{ "clock> " + telegram.ClockReference }</span>
+        <span id="t-telegraphist" class="telegram-field" style="left: 29%; top: 81.6%;">{ telegram.Telegraphist }</span>
+        <span id="t-identifier" class="telegram-field" style="left: 63%; top: 81.6%;">{ telegram.Identifier }</span>
+    </div>
+    <button id="refresh-btn"
+            hx-get="/telegram"
+            hx-headers='{"Accept": "application/json"}'
+            hx-swap="none">
+        Refresh Telegram
+    </button>
     <script>
-        const canvas = document.getElementById('telegramCanvas');
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-        img.src = 'assets/background.png';
-        img.onload = function (){
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            ctx.font = '20px Courier New';
-            ctx.fillStyle = '#333';
-
-            ctx.fillText(JSON.parse(document.getElementById("telegram").textContent)["FormVersion"], canvas.width - 270, 270);
-            ctx.fillText('»'+JSON.parse(document.getElementById("telegram").textContent)["Service"]+'«', canvas.width - 420, 323);
-
-            ctx.fillText(JSON.parse(document.getElementById("telegram").textContent)["Message"], 222, 456);
-            ctx.fillText('emoji> '+JSON.parse(document.getElementById("telegram").textContent)["Emoji"], 222, 546);
-            ctx.fillText('clock> '+JSON.parse(document.getElementById("telegram").textContent)["ClockReference"], 222, 636);
-
-            ctx.fillText(JSON.parse(document.getElementById("telegram").textContent)["Telegraphist"], 260, canvas.height - 103);
-            ctx.fillText(JSON.parse(document.getElementById("telegram").textContent)["Identifier"], 260, canvas.height - 56);
-        };
+        document.body.addEventListener('htmx:afterRequest', function(evt) {
+            if (evt.detail.pathInfo.requestPath === '/telegram' && evt.detail.successful) {
+                var data = JSON.parse(evt.detail.xhr.responseText);
+                document.getElementById('t-formversion').textContent = data.FormVersion;
+                document.getElementById('t-service').textContent = '\u00BB' + data.Service + '\u00AB';
+                document.getElementById('t-message').textContent = data.Message;
+                document.getElementById('t-emoji').textContent = 'emoji> ' + data.Emoji;
+                document.getElementById('t-clockref').textContent = 'clock> ' + data.ClockReference;
+                document.getElementById('t-telegraphist').textContent = data.Telegraphist;
+                document.getElementById('t-identifier').textContent = data.Identifier;
+            }
+        });
     </script>
 </body>
 </html>

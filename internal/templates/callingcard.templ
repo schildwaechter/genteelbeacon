@@ -1,0 +1,101 @@
+// Schildwächter's Genteel Beacon
+// Copyright Carsten Thiel 2025-2026
+//
+// SPDX-License-Identifier: Apache-2.0
+
+package templates
+
+import "github.com/schildwaechter/genteelbeacon/internal/types"
+
+templ HtmlCallingCard(card types.CallingCard){
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{ card.Attendant }</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.js" integrity="sha384-ezjq8118wdwdRMj+nX4bevEi+cDLTbhLAeFF688VK8tPDGeLUe0WoY2MZtSla72F" crossorigin="anonymous"></script>
+    <style>
+        body, html {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #333;
+            flex-direction: column;
+            gap: 16px;
+        }
+        #card-container {
+            position: relative;
+            width: 600px;
+            max-width: 100%;
+            aspect-ratio: 600 / 816;
+            background-image: url('assets/calling-card.jpg');
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+            container-type: inline-size;
+        }
+        .card-field {
+            position: absolute;
+            font-family: 'Dancing Script', 'Courier New', cursive;
+            font-size: 3.2cqw;
+            color: #333;
+            white-space: nowrap;
+        }
+        .card-salutation {
+            position: absolute;
+            font-family: 'Dancing Script', 'Courier New', cursive;
+            font-size: 7cqw;
+            color: #333;
+            white-space: nowrap;
+        }
+        #refresh-card-btn {
+            font-family: 'Dancing Script', 'Courier New', cursive;
+            font-size: 16px;
+            padding: 8px 24px;
+            background: #d4c5a0;
+            border: 2px solid #8b7355;
+            color: #333;
+            cursor: pointer;
+        }
+        #refresh-card-btn:hover {
+            background: #c4b590;
+        }
+        .htmx-request #refresh-card-btn {
+            opacity: 0.5;
+            cursor: wait;
+        }
+    </style>
+</head>
+<body>
+    <div id="card-container">
+        <span id="c-salutation" class="card-salutation" style="left: 20%; top: 56%;">{ "»" + card.Salutation + "«" }</span>
+        <span id="c-attendant" class="card-field" style="left: 32%; top: 76.8%;">{ card.Attendant }</span>
+        <span id="c-signature" class="card-field" style="left: 32%; top: 81.1%;">{ card.Signature }</span>
+    </div>
+    <button id="refresh-card-btn"
+            hx-get="/emission"
+            hx-headers='{"Accept": "application/json"}'
+            hx-swap="none">
+        Refresh Calling Card
+    </button>
+    <script>
+        document.body.addEventListener('htmx:afterRequest', function(evt) {
+            if (evt.detail.pathInfo.requestPath === '/emission' && evt.detail.successful) {
+                var resp = JSON.parse(evt.detail.xhr.responseText);
+                var data = resp['Calling-Card'];
+                document.getElementById('c-salutation').textContent = '\u00BB' + data.Salutation + '\u00AB';
+                document.getElementById('c-attendant').textContent = data.Attendant;
+                document.getElementById('c-signature').textContent = data.Signature;
+            }
+        });
+    </script>
+</body>
+</html>
+}
+

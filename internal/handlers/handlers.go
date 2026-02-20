@@ -71,7 +71,8 @@ func handleTimestamp(c *fiber.Ctx) error {
 		nodeName = "unknown host"
 	}
 	myClockReading := types.ClockReading{
-		TimeReading: time.Now().Format("2006-01-02 15:04:05"),
+		//TimeReading: time.Now().UTC().Format("2006-01-02 15:04:05"),
+		TimeReading: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 		ClockName:   nodeName,
 	}
 
@@ -107,7 +108,7 @@ func handleTelegram(c *fiber.Ctx) error {
 		// return simplified answer
 		o11y.Logger.DebugContext(ctx, "No clock available")
 		clockResponseData = types.ClockReading{
-			TimeReading: time.Now().Format("2006-01-02"),
+			TimeReading: time.Now().UTC().Format("2006-01-02"),
 			ClockName:   "local",
 		}
 	}
@@ -171,7 +172,7 @@ func handleEmission(c *fiber.Ctx) error {
 		panic(err)
 	}
 	// put everything together
-	result := map[string]interface{}{
+	result := map[string]any{
 		"Request-Headers":     headers,
 		"Genteel-Environment": genteelenvs,
 		"Calling-Card":        scribeResponse,
@@ -179,6 +180,10 @@ func handleEmission(c *fiber.Ctx) error {
 	// respond with appropriate mimetype
 	offer := c.Accepts(fiber.MIMETextPlain, fiber.MIMETextHTML, fiber.MIMEApplicationJSON)
 	o11y.Logger.DebugContext(ctx, "Offer: "+offer)
+	if offer == "text/html" {
+		c.Set("Content-type", "text/html")
+		return templates.HtmlCallingCard(scribeResponse).Render(c.Context(), c.Response().BodyWriter())
+	}
 	if offer == "application/json" {
 		return c.Status(http.StatusOK).JSON(result)
 	}

@@ -50,8 +50,9 @@ func main() {
 	app := fiber.New()
 	appInt := fiber.New()
 	app.Use(requestid.New())
-	// telegram background image, before tracing/logging/metrics
-	app.Static("/assets/background.png", "./assets/background.png")
+	// background images, before tracing/logging/metrics
+	app.Static("/assets/telegram.jpg", "./assets/telegram.jpg")
+	app.Static("/assets/calling-card.jpg", "./assets/calling-card.jpg")
 
 	// healthcheck before any tracing/logging/metrics and on internal port
 	appInt.Use(healthcheck.New(healthcheck.Config{
@@ -165,16 +166,12 @@ func main() {
 		appIntAddr := config.GetEnv("INT_ADDR", "127.0.0.1")
 
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			log.Fatal(appInt.Listen(appIntAddr + ":" + appIntPort))
-		}()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		})
+		wg.Go(func() {
 			log.Fatal(app.Listen(appAddr + ":" + appPort))
-		}()
+		})
 		wg.Wait()
 	}
 }

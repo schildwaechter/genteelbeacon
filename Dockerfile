@@ -14,6 +14,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags "-X gi
 # package the binary into a container
 FROM scratch
 COPY --from=builder /go/src/genteelbeacon/genteelbeacon /genteelbeacon
-COPY assets/background.png /assets/background.png
+COPY assets/telegram.jpg /assets/telegram.jpg
+COPY assets/calling-card.jpg /assets/calling-card.jpg
 
 ENTRYPOINT ["/genteelbeacon"]

@@ -193,14 +193,14 @@ func valueServe(w http.ResponseWriter, r *http.Request) {
 
 	// return data in expected format
 	// https://medium.com/swlh/building-your-own-custom-metrics-api-for-kubernetes-horizontal-pod-autoscaler-277473dea2c1
-	data := map[string]interface{}{
+	data := map[string]any{
 		"kind":       "MetricValueList",
 		"apiVersion": "custom.metrics.k8s.io/v1beta1",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"selfLink": "/apis/custom.metrics.k8s.io/v1beta1",
 		},
-		"items": []interface{}{map[string]interface{}{
-			"describedObject": map[string]interface{}{
+		"items": []any{map[string]any{
+			"describedObject": map[string]any{
 				"kind":       "Service",
 				"namespace":  nameSpace,
 				"name":       beacon,

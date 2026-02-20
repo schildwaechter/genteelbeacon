@@ -41,12 +41,24 @@ func DiligentClerk(ctx context.Context, clockResponseData types.ClockReading, us
 	responseTelegram.Service = config.AppName
 	responseTelegram.Telegraphist = nodeName
 	responseTelegram.FormVersion = config.BuildVersion
+	parsedTime, parseErr := time.Parse("2006-01-02T15:04:05.000Z", clockResponseData.TimeReading)
+	if parseErr != nil {
+		// try getting a day
+		parsedTime, parseErr = time.Parse("2006-01-02", clockResponseData.TimeReading)
+	}
+	if parseErr != nil {
+		// just go with whatever we have
+		responseTelegram.Timestamp = clockResponseData.TimeReading
+	} else {
+		// convert to system local time
+		responseTelegram.Timestamp = parsedTime.Local().Format("2006-01-02T15:04:05.000Z")
+	}
 	if useClock {
-		responseTelegram.Message = "The time is " + clockResponseData.TimeReading
+		responseTelegram.Message = "The time is " + responseTelegram.Timestamp
 		responseTelegram.Emoji = ":mantelpiece_clock:"
 		responseTelegram.ClockReference = clockResponseData.ClockName
 	} else {
-		responseTelegram.Message = "Today is " + clockResponseData.TimeReading + " – that's all we have!"
+		responseTelegram.Message = "Today is " + responseTelegram.Timestamp + " – that's all we have!"
 		responseTelegram.Emoji = ":calendar:"
 		responseTelegram.ClockReference = "unavailable"
 	}

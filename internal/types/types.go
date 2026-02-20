@@ -14,6 +14,7 @@ type Telegram struct {
 	Telegraphist   string
 	Identifier     string
 	ClockReference string
+	Timestamp      string
 }
 
 type ClockReading struct {
