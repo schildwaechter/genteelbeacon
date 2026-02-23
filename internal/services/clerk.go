@@ -51,7 +51,7 @@ func DiligentClerk(ctx context.Context, clockResponseData types.ClockReading, us
 		responseTelegram.Timestamp = clockResponseData.TimeReading
 	} else {
 		// convert to system local time
-		responseTelegram.Timestamp = parsedTime.Local().Format("2006-01-02T15:04:05.000Z")
+		responseTelegram.Timestamp = parsedTime.Local().Format("2006-01-02 15:04:05")
 	}
 	if useClock {
 		responseTelegram.Message = "The time is " + responseTelegram.Timestamp
